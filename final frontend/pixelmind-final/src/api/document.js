@@ -5,13 +5,14 @@ export const documentApi = {
   uploadDocument: (applicantId, file, onUploadProgress) => {
     const formData = new FormData();
     formData.append('file', file);
-    return api.client.post(`/applicants/${applicantId}/documents`, formData, {
+    formData.append('applicantId', applicantId);
+    return api.client.post(`/documents/upload`, formData, {
       headers: {
         'Content-Type': 'multipart/form-data',
       },
       onUploadProgress,
     }).then(res => res.data);
   },
-  getDocumentStatus: (documentId) => api.get(`/documents/${documentId}/status`),
+  getDocumentStatus: (documentId) => api.get(`/documents/${documentId}`),
 };
 

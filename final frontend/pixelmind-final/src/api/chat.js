@@ -1,7 +1,7 @@
 import { api } from './client';
 
 export const chatApi = {
-  getHistory: (applicantId) => api.get(`/applicants/${applicantId}/chat/history`),
-  sendMessage: (applicantId, message) => api.post(`/applicants/${applicantId}/chat/messages`, { message }),
+  getHistory: (applicantId) => Promise.resolve([]),
+  sendMessage: (applicantId, message) => api.post(`/ai/chat`, { applicantId, message }),
 };
 

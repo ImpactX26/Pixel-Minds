@@ -336,7 +336,7 @@ function ApplicationStatus() {
   return <section className="status card"><div className="status-title"><b>My Application Status</b><button>View Details</button></div>{rows.map(([label,value,color],i) => <div className="status-row" key={label}><span className={`status-icon ${color}`}><Icon name={i === 0 ? 'check' : i === 4 ? 'clock' : 'file'} size={15}/></span><div className="status-content"><div><b>{label}</b><span>{value}</span></div>{i < 3 && <div className="bar"><i style={{width: i === 0 ? '92%' : '75%'}}/></div>}</div></div>)}</section>;
 }
 
-function ChatPanel({ applicantId = '123' }) {
+function ChatPanel({ applicantId = '9c2d5809-78cd-49ca-b154-ce79fa58bccf' }) {
   const { data: history, execute: loadHistory } = useApi(chatApi.getHistory);
   const { execute: sendMsgApi } = useApi(chatApi.sendMessage);
   
@@ -369,7 +369,7 @@ function ChatPanel({ applicantId = '123' }) {
   return <section className="chat-panel card" id="ai-assistant"><div className="chat-title"><div className="robot"><Icon name="bot" size={21}/></div><div><b>Chat with Educaro AI</b><span><i/> Online</span></div><button>⌗</button></div><div className="messages">{messages.map((m,i)=><div key={i} className={`bubble ${m.role}`}>{m.text}{m.role==='ai' && i===0 ? <time>10:24 AM</time> : null}</div>)}</div><div className="quick"><button onClick={()=>setInput('What is missing?')}>What is missing?</button><button onClick={()=>setInput('Am I qualified?')}>Am I qualified?</button><button onClick={()=>setInput('What should I do next?')}>What should I do next?</button></div><div className="composer"><button><Icon name="paperclip" size={18}/></button><input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&send()} placeholder="Ask anything..."/><button className="send" onClick={send}><Icon name="send" size={17}/></button></div></section>;
 }
 
-function RightRail({ onUpload, isUploading, applicantId = '123' }) { 
+function RightRail({ onUpload, isUploading, applicantId = '9c2d5809-78cd-49ca-b154-ce79fa58bccf' }) {
   return (
     <aside className="right-rail">
       <ProgressCard/>
@@ -1204,7 +1204,7 @@ export default function Dashboard() {
   const [active, setActive] = useState('journey');
   const [view, setView] = useState('globe');
   const inputRef = useRef(null);
-  const applicantId = '123';
+  const applicantId = '9c2d5809-78cd-49ca-b154-ce79fa58bccf';
   
   const { execute: uploadDoc } = useApi(documentApi.uploadDocument);
   
