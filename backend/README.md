@@ -161,6 +161,129 @@ Invokes Member 4's Document Extraction Service (`POST http://localhost:3001/api/
 
 ---
 
+### 5. Qualification Engine APIs (Phase 4)
+
+Deterministic rule evaluation engine that evaluates applicant facts (Profile, Journey, Extracted Document data) against predefined qualification rules. LLMs do not make qualification decisions.
+
+#### **Get Requirements Schema / Definitions**
+- **`GET /api/v1/applicants/:id/requirements`**
+- Returns the list of standard requirement definitions applicable to this applicant (codes, category, title, description, required flag).
+
+#### **Get Latest Stored Qualification**
+- **`GET /api/v1/applicants/:id/qualification`**
+- Returns the latest stored qualification result from PostgreSQL (or calculates & stores if never run before).
+
+#### **Check & Recalculate Qualification**
+- **`POST /api/v1/applicants/:id/qualification/check`**
+- Recalculates qualification using current Applicant, Profile, and Document extracted data, persists the detailed result in the `qualifications` table, updates the Journey stage (`QUALIFICATION_COMPLETE` if qualified, `QUALIFICATION_PENDING` otherwise), and returns the full evaluation summary.
+
+- **Response (`200 OK`):**
+```json
+{
+  "applicantId": "9fcc6309-471c-4334-9472-82eeb7db2b8b",
+  "status": "QUALIFIED",
+  "qualificationStatus": "qualified",
+  "totalRequirements": 8,
+  "satisfied": 8,
+  "missing": 0,
+  "incomplete": 0,
+  "conflicts": 0,
+  "pendingVerification": 0,
+  "completedRequirements": [
+    {
+      "code": "FULL_NAME",
+      "title": "Full Name Verification",
+      "category": "PROFILE",
+      "required": true,
+      "status": "SATISFIED",
+      "reason": "Full name verified: Priya Patel",
+      "details": { "name": "Priya Patel" }
+    }
+  ],
+  "missingRequirements": [],
+  "requirements": [
+    {
+      "code": "FULL_NAME",
+      "title": "Full Name Verification",
+      "category": "PROFILE",
+      "required": true,
+      "status": "SATISFIED",
+      "reason": "Full name verified: Priya Patel"
+    },
+    {
+      "code": "DATE_OF_BIRTH",
+      "title": "Date of Birth",
+      "category": "PROFILE",
+      "required": true,
+      "status": "SATISFIED",
+      "reason": "Date of birth verified: 2001-08-20"
+    },
+    {
+      "code": "GOAL",
+      "title": "Study / Career Goal",
+      "category": "PROFILE",
+      "required": true,
+      "status": "SATISFIED",
+      "reason": "Target academic/career goal specified: MASTER_STUDIES"
+    },
+    {
+      "code": "DEGREE_CERTIFICATE",
+      "title": "Academic Degree Certificate",
+      "category": "EDUCATION",
+      "required": true,
+      "status": "SATISFIED",
+      "reason": "Degree certificate verified: Bachelor of Science in Information Technology"
+    },
+    {
+      "code": "UNIVERSITY",
+      "title": "Recognized Institution / University",
+      "category": "EDUCATION",
+      "required": true,
+      "status": "SATISFIED",
+      "reason": "University verified: Mumbai University"
+    },
+    {
+      "code": "GRADUATION_YEAR",
+      "title": "Graduation Year",
+      "category": "EDUCATION",
+      "required": true,
+      "status": "SATISFIED",
+      "reason": "Graduation year verified: 2023"
+    },
+    {
+      "code": "PASSPORT",
+      "title": "Valid Passport Document",
+      "category": "DOCUMENTS",
+      "required": true,
+      "status": "SATISFIED",
+      "reason": "Passport document uploaded and verified"
+    },
+    {
+      "code": "GERMAN_LANGUAGE_CERTIFICATE",
+      "title": "German Language Proficiency",
+      "category": "LANGUAGE",
+      "required": true,
+      "status": "SATISFIED",
+      "reason": "German language proficiency recorded: B2"
+    }
+  ],
+  "updatedAt": "2026-10-08T10:05:25.280Z"
+}
+```
+
+---
+
+## 📜 Supported Requirement Statuses (`RequirementStatus` Enum)
+
+- `SATISFIED`: Requirement conditions fully met.
+- `MISSING`: Data or document is completely absent.
+- `INCOMPLETE`: Document uploaded but pending OCR processing or missing field.
+- `CONFLICT`: Mismatch detected (e.g., Profile university vs Degree document extracted university).
+- `PENDING_VERIFICATION`: Low extraction confidence score (< 0.70) requiring manual check.
+- `NOT_APPLICABLE`: Requirement not applicable.
+
+---
+
 ## 📜 Supported Document Statuses (`DocumentStatus` Enum)
 
 - `uploaded`

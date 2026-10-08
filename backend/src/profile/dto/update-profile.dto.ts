@@ -1,4 +1,13 @@
-import { IsArray, IsObject, IsOptional, IsString } from 'class-validator';
+import { IsArray, IsObject, IsOptional, IsString, ValidateNested } from 'class-validator';
+import { Type } from 'class-transformer';
+
+export class LanguageItemDto {
+  @IsString()
+  language: string;
+
+  @IsString()
+  level: string;
+}
 
 export class UpdateProfileDto {
   @IsOptional()
@@ -16,7 +25,9 @@ export class UpdateProfileDto {
 
   @IsOptional()
   @IsArray()
-  languages?: Array<{ language: string; level: string }>;
+  @ValidateNested({ each: true })
+  @Type(() => LanguageItemDto)
+  languages?: LanguageItemDto[];
 
   @IsOptional()
   @IsArray()
