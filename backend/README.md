@@ -338,6 +338,48 @@ Deterministic decision engine that identifies exactly ONE highest-priority actio
 
 ---
 
+### 7. AI Orchestrator APIs (Phase 6)
+
+Provider-independent coordination layer that reads live database facts (Applicant, Profile, Documents, Journey, Qualification, Next Action) and formulates deterministic, helpful answers while recording conversation history in PostgreSQL.
+
+#### **Chat / Orchestrator Endpoint**
+- **`POST /api/v1/ai/chat`**
+- **Request Body:**
+```json
+{
+  "applicantId": "c96c473f-c96a-424a-aa77-3bb8e5b4d59b",
+  "message": "What documents am I missing?"
+}
+```
+
+- **Supported Intents:**
+  - `GET_MISSING_DOCUMENTS`: Queries qualification missing document rules and lists absent/incomplete credentials.
+  - `GET_QUALIFICATION`: Summarizes overall qualification readiness and satisfied requirement count.
+  - `GET_NEXT_ACTION`: Resolves the single highest-priority next action for the applicant.
+  - `GET_STATUS`: Summarizes journey stage, progress percentage, qualification status, and next action.
+  - `GET_PROFILE`: Generates a safe profile summary without leaking internal IDs.
+  - `UPLOAD_DOCUMENT`: Explains document upload capabilities and recommended next document.
+  - `UNKNOWN`: Helpful fallback guiding the applicant with supported questions.
+
+- **Response (`200 OK`):**
+```json
+{
+  "applicantId": "c96c473f-c96a-424a-aa77-3bb8e5b4d59b",
+  "message": "You are currently missing your degree certificate and passport.",
+  "intent": "GET_MISSING_DOCUMENTS",
+  "nextAction": {
+    "action": "UPLOAD_DOCUMENT",
+    "title": "Upload your degree certificate",
+    "priority": "HIGH",
+    "status": "PENDING",
+    "reason": "Your academic degree certificate is required to verify your eligibility.",
+    "requirementCode": "DEGREE_CERTIFICATE"
+  }
+}
+```
+
+---
+
 ## 📜 Supported Requirement Statuses (`RequirementStatus` Enum)
 
 - `SATISFIED`: Requirement conditions fully met.
