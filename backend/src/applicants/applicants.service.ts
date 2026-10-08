@@ -97,11 +97,25 @@ export class ApplicantsService {
 
   async findById(id: string): Promise<Applicant> {
     const applicant = await this.applicantRepository.findOne({
-      where: { id },
+      where: [{ id }, { email: id }],
+      relations: ['journey', 'profile'],
     });
 
     if (!applicant) {
-      throw new NotFoundException(`Applicant with ID "${id}" not found`);
+      throw new NotFoundException(`Applicant with ID or Email "${id}" not found`);
+    }
+
+    return applicant;
+  }
+
+  async findByEmail(email: string): Promise<Applicant> {
+    const applicant = await this.applicantRepository.findOne({
+      where: { email: email.trim().toLowerCase() },
+      relations: ['journey', 'profile'],
+    });
+
+    if (!applicant) {
+      throw new NotFoundException(`Applicant with email "${email}" not found`);
     }
 
     return applicant;

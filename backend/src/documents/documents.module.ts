@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Document } from './entities/document.entity';
 import { Applicant } from '../applicants/entities/applicant.entity';
+import { ApplicantProfile } from '../profile/entities/applicant-profile.entity';
 import { DocumentsService } from './documents.service';
 import { StorageService } from './storage.service';
 import { DocumentExtractionClient } from './extraction.client';
@@ -11,7 +12,7 @@ import {
 } from './documents.controller';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Document, Applicant])],
+  imports: [TypeOrmModule.forFeature([Document, Applicant, ApplicantProfile])],
   controllers: [DocumentsController, ApplicantDocumentsController],
   providers: [DocumentsService, StorageService, DocumentExtractionClient],
   exports: [DocumentsService, StorageService, DocumentExtractionClient, TypeOrmModule],

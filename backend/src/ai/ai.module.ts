@@ -8,6 +8,8 @@ import { Conversation } from '../conversations/entities/conversation.entity';
 import { QualificationModule } from '../qualification/qualification.module';
 import { NextActionModule } from '../next-action/next-action.module';
 import { IntentDetectorService } from './services/intent-detector.service';
+import { LlmService } from './services/llm.service';
+import { ElevenLabsService } from './services/elevenlabs.service';
 import { AiOrchestrator } from './ai.orchestrator';
 import { AiController } from './ai.controller';
 
@@ -24,7 +26,7 @@ import { AiController } from './ai.controller';
     NextActionModule,
   ],
   controllers: [AiController],
-  providers: [IntentDetectorService, AiOrchestrator],
-  exports: [AiOrchestrator, IntentDetectorService],
+  providers: [IntentDetectorService, LlmService, ElevenLabsService, AiOrchestrator],
+  exports: [AiOrchestrator, IntentDetectorService, LlmService, ElevenLabsService],
 })
 export class AiModule {}

@@ -16,237 +16,303 @@ export class NextActionEngine {
   private readonly logger = new Logger(NextActionEngine.name);
 
   /**
-   * Deterministically decides exactly ONE highest-priority Next Best Action
+   * Deterministically decides exactly ONE clear Recommended Next Step for an applicant.
+   * Priority:
+   * 1. Document verification mismatch / clarification required
+   * 2. Missing mandatory profile / pathway requirements
+   * 3. Missing mandatory documents (graduation certificate, language certificate, CV)
+   * 4. Everything ready -> Proceed to Eligibility Assessment
    */
   determineNextAction(
     applicant: Applicant,
     profile: ApplicantProfile | null,
     documents: Document[] = [],
-    qualification: QualificationEvaluationSummary,
+    qualification?: QualificationEvaluationSummary,
   ): NextActionResult {
-    const reqs = qualification.requirements || [];
+    const parseJson = (val: any) => {
+      if (!val) return {};
+      if (typeof val === 'string') {
+        try {
+          return JSON.parse(val);
+        } catch {
+          return {};
+        }
+      }
+      return val;
+    };
 
-    // ----------------------------------------------------
-    // PRIORITY 1: Resolve CONFLICT
-    // ----------------------------------------------------
-    const conflictReq = reqs.find((r) => r.status === RequirementStatus.CONFLICT);
-    if (conflictReq) {
-      if (conflictReq.code === 'UNIVERSITY') {
+    const additionalInfo = parseJson(profile?.additionalInfo);
+    const reqData = additionalInfo.requirement || {};
+    const personalData = additionalInfo.personal || {};
+    const educationData = parseJson(profile?.education);
+
+    const getDocCategory = (doc: Document) => {
+      const type = (doc.type || '').toLowerCase();
+      const name = (doc.name || '').toLowerCase();
+      if (
+        type.includes('degree') ||
+        type.includes('academic') ||
+        type.includes('graduation') ||
+        name.includes('degree') ||
+        name.includes('graduation')
+      ) {
+        return 'DEGREE_CERTIFICATE';
+      }
+      if (
+        type.includes('lang') ||
+        type.includes('german') ||
+        name.includes('lang') ||
+        name.includes('german')
+      ) {
+        return 'LANGUAGE_CERTIFICATE';
+      }
+      if (
+        type.includes('cv') ||
+        type.includes('resume') ||
+        name.includes('cv') ||
+        name.includes('resume')
+      ) {
+        return 'CV';
+      }
+      if (type.includes('passport') || name.includes('passport')) {
+        return 'PASSPORT';
+      }
+      return doc.type || doc.name || doc.id;
+    };
+
+    // Group documents to evaluate the most recent upload for each category
+    const activeDocMap = new Map<string, Document>();
+    for (const doc of documents) {
+      const cat = getDocCategory(doc);
+      if (!activeDocMap.has(cat)) {
+        activeDocMap.set(cat, doc);
+      }
+    }
+    const activeDocuments = Array.from(activeDocMap.values());
+
+    // =========================================================================
+    // 1. DOCUMENT VERIFICATION MISMATCH / CLARIFICATION REQUIRED (Highest Priority)
+    // =========================================================================
+    for (const doc of activeDocuments) {
+      const ext = parseJson(doc.extractedData);
+      const vResult = ext.verificationResult;
+      const isMismatch =
+        vResult?.overallStatus === 'MISMATCH' ||
+        vResult?.clarificationRequired === true ||
+        vResult?.fields?.some((f: any) => f.status === 'MISMATCH') ||
+        doc.status === 'rejected' ||
+        doc.status === 'failed';
+
+      if (isMismatch) {
+        const docTypeLower = (doc.type || '').toLowerCase();
+        const docNameLower = (doc.name || '').toLowerCase();
+
+        const isGradCert =
+          docTypeLower.includes('degree') ||
+          docTypeLower.includes('academic') ||
+          docTypeLower.includes('graduation') ||
+          docNameLower.includes('degree') ||
+          docNameLower.includes('graduation');
+
+        const isCv =
+          docTypeLower.includes('cv') ||
+          docTypeLower.includes('resume') ||
+          docNameLower.includes('cv') ||
+          docNameLower.includes('resume');
+
+        const isLangCert =
+          docTypeLower.includes('lang') ||
+          docTypeLower.includes('german') ||
+          docNameLower.includes('lang') ||
+          docNameLower.includes('german');
+
+        const mismatchedField = vResult?.fields?.find((f: any) => f.status === 'MISMATCH');
+
+        let title = 'Check uploaded document';
+        let reason = vResult?.clarificationMessage;
+
+        if (isGradCert) {
+          title = 'Check graduation certificate';
+          if (!reason) {
+            if (mismatchedField?.field === 'graduationYear') {
+              reason = "⚠️ Please check your graduation certificate — the graduation year doesn't match your profile.";
+            } else if (mismatchedField?.field === 'institution') {
+              reason = "⚠️ Please check your graduation certificate — the institution doesn't match your profile.";
+            } else if (mismatchedField?.field === 'degree') {
+              reason = "⚠️ Please check your graduation certificate — the degree doesn't match your profile.";
+            } else {
+              reason = "⚠️ Please check your graduation certificate — details do not match your profile.";
+            }
+          } else if (!reason.startsWith('⚠️')) {
+            reason = `⚠️ ${reason}`;
+          }
+        } else if (isLangCert) {
+          title = 'Check language certificate';
+          if (!reason) {
+            reason = "⚠️ Please check your language certificate — details do not match your profile.";
+          } else if (!reason.startsWith('⚠️')) {
+            reason = `⚠️ ${reason}`;
+          }
+        } else if (isCv) {
+          title = 'Check CV';
+          if (!reason) {
+            reason = "⚠️ Please check your CV — details do not match your profile.";
+          } else if (!reason.startsWith('⚠️')) {
+            reason = `⚠️ ${reason}`;
+          }
+        } else {
+          title = `Check ${doc.name || 'document'}`;
+          if (!reason) {
+            reason = `⚠️ Please check your ${doc.name || 'document'} — discrepancies found.`;
+          } else if (!reason.startsWith('⚠️')) {
+            reason = `⚠️ ${reason}`;
+          }
+        }
+
         return {
           action: NextActionType.RESOLVE_CONFLICT,
-          title: 'Resolve your university information',
-          reason:
-            conflictReq.reason ||
-            'Your profile university does not match your degree certificate.',
+          title,
+          reason,
           priority: ActionPriority.HIGH,
           status: ActionStatus.PENDING,
-          requirementCode: conflictReq.code,
+          requirementCode: doc.type || 'DOCUMENT_VERIFICATION',
         };
       }
-
-      return {
-        action: NextActionType.RESOLVE_CONFLICT,
-        title: `Resolve your ${conflictReq.title.toLowerCase()}`,
-        reason:
-          conflictReq.reason ||
-          `Conflicting data found for ${conflictReq.title.toLowerCase()}. Please resolve the discrepancy.`,
-        priority: ActionPriority.HIGH,
-        status: ActionStatus.PENDING,
-        requirementCode: conflictReq.code,
-      };
     }
 
-    // ----------------------------------------------------
-    // PRIORITY 2: Complete mandatory missing profile information
-    // ----------------------------------------------------
-    const missingProfileReq = reqs.find(
-      (r) =>
-        r.required &&
-        r.category === 'PROFILE' &&
-        (r.status === RequirementStatus.MISSING || r.status === RequirementStatus.INCOMPLETE),
-    );
-
-    if (missingProfileReq) {
-      if (missingProfileReq.code === 'DATE_OF_BIRTH') {
-        return {
-          action: NextActionType.COMPLETE_PROFILE,
-          title: 'Add your date of birth',
-          reason: 'Your date of birth is required to continue your application.',
-          priority: ActionPriority.HIGH,
-          status: ActionStatus.PENDING,
-          requirementCode: missingProfileReq.code,
-        };
-      }
-
-      if (missingProfileReq.code === 'FULL_NAME') {
-        return {
-          action: NextActionType.COMPLETE_PROFILE,
-          title: 'Provide your full name',
-          reason: 'Your full name is required to continue your application.',
-          priority: ActionPriority.HIGH,
-          status: ActionStatus.PENDING,
-          requirementCode: missingProfileReq.code,
-        };
-      }
-
-      if (missingProfileReq.code === 'GOAL') {
-        return {
-          action: NextActionType.COMPLETE_PROFILE,
-          title: 'Specify your target goal in Germany',
-          reason: 'Your academic or career goal in Germany is required to tailor your pathway.',
-          priority: ActionPriority.HIGH,
-          status: ActionStatus.PENDING,
-          requirementCode: missingProfileReq.code,
-        };
-      }
-
+    // =========================================================================
+    // 2. MISSING PROFILE & PATHWAY REQUIREMENTS
+    // =========================================================================
+    if (!applicant.country && !reqData.country) {
       return {
         action: NextActionType.COMPLETE_PROFILE,
-        title: `Provide your ${missingProfileReq.title.toLowerCase()}`,
-        reason: missingProfileReq.reason || 'Mandatory profile information is required.',
+        title: 'Specify target country',
+        reason: 'Please complete your pathway requirements — specify your target destination country.',
         priority: ActionPriority.HIGH,
         status: ActionStatus.PENDING,
-        requirementCode: missingProfileReq.code,
+        requirementCode: 'COUNTRY',
       };
     }
 
-    // ----------------------------------------------------
-    // PRIORITY 3: Upload mandatory missing document
-    // ----------------------------------------------------
-    const missingDocReq = reqs.find((r) => {
-      if (!r.required) return false;
-      if (r.status !== RequirementStatus.MISSING && r.status !== RequirementStatus.INCOMPLETE) {
-        return false;
-      }
+    if (!applicant.goal && !reqData.role) {
+      return {
+        action: NextActionType.COMPLETE_PROFILE,
+        title: 'Specify target job role',
+        reason: 'Please complete your pathway requirements — specify your target job role.',
+        priority: ActionPriority.HIGH,
+        status: ActionStatus.PENDING,
+        requirementCode: 'GOAL',
+      };
+    }
+
+    const hasEducation = Boolean(
+      educationData.degree ||
+        educationData.field ||
+        educationData.institution ||
+        (Array.isArray(profile?.education) && profile?.education.length > 0),
+    );
+    if (!hasEducation) {
+      return {
+        action: NextActionType.COMPLETE_PROFILE,
+        title: 'Complete education details',
+        reason: 'Please complete your education details in your profile.',
+        priority: ActionPriority.HIGH,
+        status: ActionStatus.PENDING,
+        requirementCode: 'EDUCATION',
+      };
+    }
+
+    if (!applicant.name && !personalData.fullName) {
+      return {
+        action: NextActionType.COMPLETE_PROFILE,
+        title: 'Provide full name',
+        reason: 'Please complete your personal details (full name).',
+        priority: ActionPriority.HIGH,
+        status: ActionStatus.PENDING,
+        requirementCode: 'FULL_NAME',
+      };
+    }
+
+    // =========================================================================
+    // 3. MISSING MANDATORY DOCUMENTS
+    // =========================================================================
+    // Check Graduation / Degree Certificate
+    const hasDegreeDoc = activeDocuments.some((d) => {
+      const t = (d.type || '').toUpperCase();
+      const n = (d.name || '').toUpperCase();
       return (
-        r.category === 'DOCUMENTS' ||
-        r.code === 'DEGREE_CERTIFICATE' ||
-        r.code === 'PASSPORT' ||
-        r.code === 'GERMAN_LANGUAGE_CERTIFICATE'
+        t === 'DEGREE_CERTIFICATE' ||
+        t.includes('DEGREE') ||
+        t.includes('ACADEMIC') ||
+        n.includes('DEGREE') ||
+        n.includes('GRADUATION')
       );
     });
 
-    if (missingDocReq) {
-      if (missingDocReq.code === 'GERMAN_LANGUAGE_CERTIFICATE') {
-        return {
-          action: NextActionType.UPLOAD_DOCUMENT,
-          title: 'Upload your German language certificate',
-          reason: 'Your German language qualification is still pending.',
-          priority: ActionPriority.HIGH,
-          status: ActionStatus.PENDING,
-          requirementCode: missingDocReq.code,
-        };
-      }
-
-      if (missingDocReq.code === 'DEGREE_CERTIFICATE') {
-        return {
-          action: NextActionType.UPLOAD_DOCUMENT,
-          title: 'Upload your degree certificate',
-          reason: 'Your academic degree certificate is required to verify your eligibility.',
-          priority: ActionPriority.HIGH,
-          status: ActionStatus.PENDING,
-          requirementCode: missingDocReq.code,
-        };
-      }
-
-      if (missingDocReq.code === 'PASSPORT') {
-        return {
-          action: NextActionType.UPLOAD_DOCUMENT,
-          title: 'Upload your passport',
-          reason: 'A valid passport copy is required for international student verification.',
-          priority: ActionPriority.HIGH,
-          status: ActionStatus.PENDING,
-          requirementCode: missingDocReq.code,
-        };
-      }
-
+    if (!hasDegreeDoc) {
       return {
         action: NextActionType.UPLOAD_DOCUMENT,
-        title: `Upload your ${missingDocReq.title.toLowerCase()}`,
-        reason: missingDocReq.reason || `Please upload your ${missingDocReq.title.toLowerCase()} to proceed.`,
+        title: 'Upload graduation certificate',
+        reason: '📄 Please upload your graduation certificate.',
         priority: ActionPriority.HIGH,
         status: ActionStatus.PENDING,
-        requirementCode: missingDocReq.code,
+        requirementCode: 'DEGREE_CERTIFICATE',
       };
     }
 
-    // ----------------------------------------------------
-    // PRIORITY 4: Complete pending verification
-    // ----------------------------------------------------
-    const pendingVerificationReq = reqs.find(
-      (r) => r.status === RequirementStatus.PENDING_VERIFICATION,
-    );
+    // Check Language Certificate
+    const hasLangDoc = activeDocuments.some((d) => {
+      const t = (d.type || '').toUpperCase();
+      const n = (d.name || '').toUpperCase();
+      return (
+        t === 'LANGUAGE_CERTIFICATE' ||
+        t.includes('LANGUAGE') ||
+        t.includes('GERMAN') ||
+        n.includes('LANGUAGE') ||
+        n.includes('GERMAN')
+      );
+    });
 
-    if (pendingVerificationReq) {
+    if (!hasLangDoc) {
       return {
-        action: NextActionType.VERIFY_DOCUMENT,
-        title: `Verify your ${pendingVerificationReq.title.toLowerCase()}`,
-        reason:
-          pendingVerificationReq.reason ||
-          'Document extraction confidence requires manual review or re-upload of a clearer document.',
+        action: NextActionType.UPLOAD_DOCUMENT,
+        title: 'Upload language certificate',
+        reason: '📄 Please upload your language certificate.',
         priority: ActionPriority.HIGH,
         status: ActionStatus.PENDING,
-        requirementCode: pendingVerificationReq.code,
+        requirementCode: 'GERMAN_LANGUAGE_CERTIFICATE',
       };
     }
 
-    // ----------------------------------------------------
-    // PRIORITY 5: Complete remaining qualification requirement
-    // ----------------------------------------------------
-    const remainingReq = reqs.find(
-      (r) =>
-        r.required &&
-        (r.status === RequirementStatus.MISSING || r.status === RequirementStatus.INCOMPLETE),
-    );
+    // Check CV
+    const hasCvDoc = activeDocuments.some((d) => {
+      const t = (d.type || '').toUpperCase();
+      const n = (d.name || '').toUpperCase();
+      return t === 'CV' || t.includes('RESUME') || n.includes('CV') || n.includes('RESUME');
+    });
 
-    if (remainingReq) {
+    if (!hasCvDoc) {
       return {
-        action: NextActionType.COMPLETE_REQUIREMENT,
-        title: `Provide your ${remainingReq.title.toLowerCase()}`,
-        reason: remainingReq.reason || `Please fulfill your ${remainingReq.title.toLowerCase()} to proceed.`,
-        priority: ActionPriority.MEDIUM,
+        action: NextActionType.UPLOAD_DOCUMENT,
+        title: 'Upload your CV',
+        reason: '📄 Please upload your CV.',
+        priority: ActionPriority.HIGH,
         status: ActionStatus.PENDING,
-        requirementCode: remainingReq.code,
+        requirementCode: 'CV',
       };
     }
 
-    // ----------------------------------------------------
-    // PRIORITY 6: Educaro next-step action (All mandatory requirements satisfied / QUALIFIED)
-    // ----------------------------------------------------
-    if (qualification.status === 'QUALIFIED') {
-      return {
-        action: NextActionType.CONTACT_EDUCARO,
-        title: 'Your profile is ready for the next step',
-        reason: 'Your required information and documents are complete.',
-        priority: ActionPriority.MEDIUM,
-        status: ActionStatus.PENDING,
-      };
-    }
-
-    // ----------------------------------------------------
-    // PRIORITY 7: Optional profile improvement
-    // ----------------------------------------------------
-    const workExp = profile?.workExperience || [];
-    const skills = profile?.skills || [];
-    if (workExp.length === 0 || skills.length === 0) {
-      return {
-        action: NextActionType.OPTIONAL_IMPROVEMENT,
-        title: 'Enhance your profile',
-        reason: 'Add work experience or additional skills to improve your German university admission chances.',
-        priority: ActionPriority.LOW,
-        status: ActionStatus.PENDING,
-      };
-    }
-
-    // ----------------------------------------------------
-    // PRIORITY 8: No Action
-    // ----------------------------------------------------
+    // =========================================================================
+    // 4. EVERYTHING CURRENTLY COMPLETE
+    // =========================================================================
     return {
-      action: NextActionType.NO_ACTION,
-      title: 'Application is up to date',
-      reason: 'No pending actions at this time.',
+      action: NextActionType.CONTACT_EDUCARO,
+      title: 'Proceed to Eligibility Assessment',
+      reason: '✅ Your information is ready. Proceed to Eligibility Assessment.',
       priority: ActionPriority.LOW,
       status: ActionStatus.PENDING,
+      requirementCode: 'READY',
     };
   }
 }
+

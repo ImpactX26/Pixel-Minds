@@ -10,12 +10,27 @@ import { ConversationChannel, MessageSender, RequirementStatus } from '../common
 import { QualificationService } from '../qualification/qualification.service';
 import { NextActionService } from '../next-action/next-action.service';
 import { IntentDetectorService } from './services/intent-detector.service';
+import { LlmService } from './services/llm.service';
+import { ElevenLabsService } from './services/elevenlabs.service';
+import { ConversationsService } from '../conversations/conversations.service';
 import { ChatRequestDto } from './dto/chat-request.dto';
-import { ChatResponse, AiIntent } from './interfaces/ai-chat.interface';
+import { ChatResponse, AiIntent, RequirementData, ProfileData } from './interfaces/ai-chat.interface';
+
+import { resolveApplicantUuid } from '../common/utils/uuid.util';
 
 @Injectable()
 export class AiOrchestrator {
   private readonly logger = new Logger(AiOrchestrator.name);
+  private static readonly requirementStore = new Map<string, RequirementData>();
+  private static readonly profileStore = new Map<string, ProfileData>();
+
+  static getStoredProfile(applicantId: string): ProfileData {
+    return this.profileStore.get(applicantId) || {};
+  }
+
+  static getStoredRequirement(applicantId: string): RequirementData {
+    return this.requirementStore.get(applicantId) || {};
+  }
 
   constructor(
     @InjectRepository(Applicant)
@@ -31,64 +46,275 @@ export class AiOrchestrator {
     private readonly qualificationService: QualificationService,
     private readonly nextActionService: NextActionService,
     private readonly intentDetector: IntentDetectorService,
+    private readonly llmService: LlmService,
+    private readonly elevenLabsService: ElevenLabsService,
   ) {}
 
   /**
-   * Process a user chat message through the AI Orchestrator coordination layer.
+   * Process a user chat message through the AI Orchestrator coordination layer using Gemini LLM (Phase 1, 2 & 3).
    */
   async processChat(dto: ChatRequestDto): Promise<ChatResponse> {
-    const { applicantId, message } = dto;
+    const applicantId = dto.applicantId || 'default';
+    const applicantUuid = resolveApplicantUuid(applicantId);
+    const message = dto.message;
 
-    // 1. Validate applicant existence
-    const applicant = await this.applicantRepository.findOne({
-      where: { id: applicantId },
-    });
-
-    if (!applicant) {
-      throw new NotFoundException(`Applicant with ID "${applicantId}" not found`);
-    }
-
-    // 2. Detect intent deterministically
+    // 1. Detect deterministic intent for metadata
     const intent = this.intentDetector.detectIntent(message);
 
-    // 3. Load live facts from database services
-    const profile = await this.profileRepository.findOne({ where: { applicantId } });
-    const documents = await this.documentRepository.find({ where: { applicantId } });
-    const journey = await this.journeyRepository.findOne({ where: { applicantId } });
-    const qualification = await this.qualificationService.getLatestQualification(applicantId);
-    const nextAction = await this.nextActionService.getNextAction(applicantId);
+    // 2. Load existing requirement & profile state
+    let currentRequirement: RequirementData = AiOrchestrator.requirementStore.get(applicantId) || {};
+    let currentProfile: ProfileData = AiOrchestrator.profileStore.get(applicantId) || {};
 
-    // 4. Generate deterministic, helpful response
-    const responseText = this.generateResponse(
-      intent,
-      applicant,
-      profile,
-      documents,
-      journey,
-      qualification,
-      nextAction,
+    // Check database for existing applicant profile if available
+    try {
+      const applicant = await this.applicantRepository.findOne({ where: { id: applicantUuid } });
+      if (applicant) {
+        if (!currentRequirement.country && applicant.country) {
+          currentRequirement.country = applicant.country;
+        }
+        if (!currentProfile.personal?.fullName && applicant.name) {
+          currentProfile.personal = { ...(currentProfile.personal || {}), fullName: applicant.name };
+        }
+      }
+      const dbProfile = await this.profileRepository.findOne({ where: { applicantId: applicantUuid } });
+      if (dbProfile) {
+        if (!currentProfile.education && dbProfile.education) currentProfile.education = dbProfile.education;
+        if (!currentProfile.skills && dbProfile.skills) currentProfile.skills = { technicalSkills: dbProfile.skills };
+        if (!currentProfile.languages && dbProfile.languages) currentProfile.languages = dbProfile.languages;
+        if (dbProfile.additionalInfo?.personal) {
+          currentProfile.personal = { ...(currentProfile.personal || {}), ...dbProfile.additionalInfo.personal };
+        }
+      }
+    } catch {
+      // Gracefully ignore DB errors in mock/standalone mode
+    }
+
+    // 3. Load recent conversation history if available
+    let history: Array<{ sender: string; message: string }> = [];
+    try {
+      const convs = await this.conversationRepository.find({
+        where: { applicantId: applicantUuid },
+        order: { createdAt: 'DESC' },
+        take: 6,
+      });
+      history = convs.reverse().map((c) => ({
+        sender: c.sender,
+        message: c.message,
+      }));
+    } catch {
+      // Gracefully ignore
+    }
+
+    const wasRequirementComplete = Boolean(currentRequirement.country && currentRequirement.role);
+    const isRequirementRelated = this.isRequirementMessage(message);
+    const isProfileRelated = this.isProfileMessage(message);
+
+    // Step A: If requirement is not yet complete OR user is explicitly providing requirement fields (e.g. role, company, country)
+    if (!wasRequirementComplete || isRequirementRelated) {
+      const reqResult = await this.llmService.extractRequirement(
+        message,
+        currentRequirement,
+        history,
+      );
+
+      // Update requirement state non-destructively
+      if (reqResult.requirement.country || reqResult.requirement.role || reqResult.requirement.company) {
+        currentRequirement = {
+          ...currentRequirement,
+          ...(reqResult.requirement.country ? { country: reqResult.requirement.country } : {}),
+          ...(reqResult.requirement.role ? { role: reqResult.requirement.role } : {}),
+          ...(reqResult.requirement.company ? { company: reqResult.requirement.company } : {}),
+        };
+        AiOrchestrator.requirementStore.set(applicantId, currentRequirement);
+        await this.persistApplicantRequirement(applicantId, currentRequirement);
+      }
+
+      const isNowComplete = Boolean(currentRequirement.country && currentRequirement.role);
+
+      // If user message is purely requirement-related and requirement is STILL incomplete: stay in REQUIREMENTS stage
+      if (!isNowComplete && !isProfileRelated) {
+        try {
+          await this.saveConversation(applicantId, message, reqResult.message);
+        } catch {}
+
+        this.logger.log(
+          `AI Orchestrator [Stage: REQUIREMENTS] for applicant ${applicantId} [Role: ${currentRequirement.role || 'missing'}, Country: ${currentRequirement.country || 'missing'}, Company: ${currentRequirement.company || 'none'}]`,
+        );
+
+        return {
+          applicantId,
+          message: reqResult.message,
+          stage: 'REQUIREMENTS',
+          goalType: 'EMPLOYMENT',
+          requirement: currentRequirement,
+          profile: currentProfile,
+          missingInformation: reqResult.missingInformation,
+          nextAction: reqResult.nextAction,
+          intent,
+        };
+      }
+    }
+
+    // Step B: Profile extraction (when requirement is complete OR message contains profile data)
+    const profileResult = await this.llmService.extractProfile(
+      message,
+      currentProfile,
+      currentRequirement,
+      history,
     );
 
-    // 5. Save conversation history in PostgreSQL
-    await this.saveConversation(applicantId, message, responseText);
+    // Persist profile in-memory & DB
+    AiOrchestrator.profileStore.set(applicantId, profileResult.profile);
+    await this.persistApplicantProfile(applicantId, profileResult.profile);
+
+    // If requirement just became complete on this turn, provide clear confirmation and ask for education
+    let responseMessage = profileResult.message;
+    if (!wasRequirementComplete && currentRequirement.country && currentRequirement.role) {
+      const companyPart = currentRequirement.company ? ` at ${currentRequirement.company}` : '';
+      const prefix = `Great! I have recorded your goal to work as a ${currentRequirement.role} in ${currentRequirement.country}${companyPart}. `;
+      if (!responseMessage.toLowerCase().includes('recorded your goal')) {
+        responseMessage = prefix + responseMessage;
+      }
+    }
+
+    try {
+      await this.saveConversation(applicantId, message, responseMessage);
+    } catch {}
 
     this.logger.log(
-      `AI Orchestrator handled chat for applicant ${applicantId} [Intent: ${intent}]`,
+      `AI Orchestrator [Stage: PROFILE] for applicant ${applicantId} [Degree: ${profileResult.profile.education?.degree || 'none'}, Skills: ${profileResult.profile.skills?.technicalSkills?.join(',') || 'none'}]`,
     );
 
     return {
       applicantId,
-      message: responseText,
+      message: responseMessage,
+      stage: 'PROFILE',
+      goalType: 'EMPLOYMENT',
+      requirement: currentRequirement,
+      profile: profileResult.profile,
+      missingInformation: profileResult.missingInformation,
+      nextAction: profileResult.nextAction,
       intent,
-      nextAction: {
-        action: nextAction.action,
-        title: nextAction.title,
-        priority: nextAction.priority,
-        status: nextAction.status,
-        reason: nextAction.reason,
-        requirementCode: nextAction.requirementCode,
-      },
     };
+  }
+
+  private isRequirementMessage(message: string): boolean {
+    const lower = (message || '').toLowerCase();
+    return (
+      /\bwant to work\b|\blooking for a job\b|\bwant a job\b|\blooking to work\b|\bwork in\b|\bjob in\b/i.test(lower) ||
+      /\bsoftware engineer\b|\bsoftware developer\b|\bnurse\b|\bnursing\b|\bdata scientist\b|\bdevops\b|\bmechanical engineer\b|\belectrical engineer\b/i.test(lower) ||
+      /\bgermany\b|\bdeutschland\b|\bberlin\b|\bmunich\b/i.test(lower) ||
+      /\bBMW\b|\bSiemens\b|\bSAP\b|\bMercedes\b|\bat\s+[A-Z]/i.test(message)
+    );
+  }
+
+  private async persistApplicantRequirement(applicantId: string, requirement: RequirementData): Promise<void> {
+    const applicantUuid = resolveApplicantUuid(applicantId);
+    try {
+      let applicant = await this.applicantRepository.findOne({ where: { id: applicantUuid } });
+      if (!applicant) {
+        applicant = this.applicantRepository.create({
+          id: applicantUuid,
+          name: 'Rahul Sharma',
+          email: `applicant-${applicantId}@educaro.de`,
+          country: requirement.country || 'Germany',
+          goal: requirement.role ? `${requirement.role} in ${requirement.country || 'Germany'}` : null,
+        });
+        await this.applicantRepository.save(applicant);
+      } else {
+        if (requirement.country) applicant.country = requirement.country;
+        if (requirement.role) {
+          applicant.goal = `${requirement.role} in ${requirement.country || 'Germany'}`;
+        }
+        await this.applicantRepository.save(applicant);
+      }
+    } catch (dbErr) {
+      this.logger.debug(`Could not update applicant requirement record: ${dbErr.message}`);
+    }
+  }
+
+  private async persistApplicantProfile(applicantId: string, profile: ProfileData): Promise<void> {
+    const applicantUuid = resolveApplicantUuid(applicantId);
+    try {
+      // 1. Update/create Applicant entity (for fullName and country)
+      let applicant = await this.applicantRepository.findOne({ where: { id: applicantUuid } });
+      if (!applicant) {
+        applicant = this.applicantRepository.create({
+          id: applicantUuid,
+          name: profile.personal?.fullName || 'Rahul Sharma',
+          email: `applicant-${applicantId}@educaro.de`,
+          country: profile.personal?.nationality || 'India',
+        });
+        applicant = await this.applicantRepository.save(applicant);
+      } else if (profile.personal?.fullName) {
+        applicant.name = profile.personal.fullName;
+        if (profile.personal?.nationality) {
+          applicant.country = profile.personal.nationality;
+        }
+        await this.applicantRepository.save(applicant);
+      }
+
+      // 2. Update/create ApplicantProfile entity
+      let profileEntity = await this.profileRepository.findOne({ where: { applicantId: applicantUuid } });
+      if (!profileEntity) {
+        profileEntity = this.profileRepository.create({ applicantId: applicantUuid });
+      }
+
+      // Persist personal data inside additionalInfo
+      if (profile.personal) {
+        profileEntity.additionalInfo = {
+          ...(profileEntity.additionalInfo || {}),
+          personal: profile.personal,
+        };
+      }
+
+      if (profile.education) {
+        profileEntity.education = profile.education;
+      }
+      if (profile.employment?.experience) {
+        profileEntity.experience = profile.employment.experience;
+      }
+      if (profile.employment) {
+        profileEntity.workExperience = [profile.employment];
+      }
+      if (profile.skills?.technicalSkills) {
+        profileEntity.skills = profile.skills.technicalSkills;
+      }
+      if (profile.languages) {
+        profileEntity.languages = profile.languages.map((l) => ({
+          language: l.language,
+          level: l.proficiency || 'Documented',
+        }));
+      }
+      await this.profileRepository.save(profileEntity);
+    } catch (dbErr) {
+      this.logger.debug(`Could not update applicant profile in DB: ${dbErr.message}`);
+    }
+  }
+
+  private isProfileMessage(message: string): boolean {
+    const lower = (message || '').toLowerCase();
+    return (
+      /\bb\.?tech\b|\bb\.?sc\b|\bm\.?tech\b|\bm\.?sc\b|\bbachelor\b|\bmaster\b|\bdegree\b|\bcollege\b|\buniversity\b|\bgraduat/i.test(lower) ||
+      /\bworked at\b|\bworking at\b|\byears? of experience\b|\byears? experience\b/i.test(lower) ||
+      /\bskills?\b|\bpython\b|\bjava\b|\bc\+\+\b|\bjavascript\b|\btypescript\b|\breact\b|\bnode/i.test(lower) ||
+      /\bspeak\b|\blanguages?\b|\bgerman is\b|\benglish is\b|\bb1\b|\bb2\b|\ba1\b|\ba2\b|\bc1\b|\bc2\b/i.test(lower) ||
+      /\bmy name is\b|\bborn on\b|\bnationality\b/i.test(lower)
+    );
+  }
+
+  /**
+   * Retrieves the current stored requirement for an applicant.
+   */
+  getRequirement(applicantId: string): RequirementData {
+    return AiOrchestrator.requirementStore.get(applicantId) || {};
+  }
+
+  /**
+   * Retrieves the current stored profile for an applicant.
+   */
+  getProfile(applicantId: string): ProfileData {
+    return AiOrchestrator.profileStore.get(applicantId) || {};
   }
 
   private generateResponse(
@@ -223,8 +449,12 @@ export class AiOrchestrator {
     userMessage: string,
     assistantResponse: string,
   ): Promise<void> {
+    // 1. Record in-memory for instant reliable retrieval
+    ConversationsService.record(applicantId, 'user', userMessage);
+    ConversationsService.record(applicantId, 'ai', assistantResponse);
+
     try {
-      // 1. User message
+      // 2. User message in DB
       const userConv = this.conversationRepository.create({
         applicantId,
         channel: ConversationChannel.WEB,
@@ -233,7 +463,7 @@ export class AiOrchestrator {
       });
       await this.conversationRepository.save(userConv);
 
-      // 2. AI Assistant message
+      // 3. AI Assistant message in DB
       const aiConv = this.conversationRepository.create({
         applicantId,
         channel: ConversationChannel.WEB,
@@ -242,7 +472,94 @@ export class AiOrchestrator {
       });
       await this.conversationRepository.save(aiConv);
     } catch (err) {
-      this.logger.error(`Failed to record conversation for applicant ${applicantId}:`, err);
+      this.logger.debug(`Failed to record conversation in DB for applicant ${applicantId}: ${err.message}`);
     }
   }
+
+  /**
+   * Processes voice audio from user:
+   * 1. Transcribes via ElevenLabs STT (model: scribe_v2)
+   * 2. Runs existing multi-turn chat pipeline (Gemini LLM + PostgreSQL state & history)
+   * 3. Generates spoken AI response audio via ElevenLabs TTS (model: eleven_multilingual_v2)
+   */
+  async processVoiceChat(params: {
+    applicantId?: string;
+    fileBuffer?: Buffer;
+    fileName?: string;
+    mimeType?: string;
+    audioBase64?: string;
+  }): Promise<{
+    userText: string;
+    message: string;
+    reply: string;
+    audioBase64?: string | null;
+    stage?: string;
+    requirement?: any;
+    profile?: any;
+    nextAction?: any;
+    intent?: any;
+  }> {
+    const applicantId = params.applicantId || '123';
+    let fileBuffer = params.fileBuffer;
+    const fileName = params.fileName || 'voice_recording.webm';
+    const mimeType = params.mimeType || 'audio/webm';
+
+    if (!fileBuffer && params.audioBase64) {
+      fileBuffer = Buffer.from(params.audioBase64, 'base64');
+    }
+
+    let userText = '';
+
+    // Step 1: ElevenLabs Speech-to-Text (scribe_v2)
+    if (fileBuffer && fileBuffer.length > 0) {
+      try {
+        userText = await this.elevenLabsService.transcribeAudio(fileBuffer, fileName, mimeType);
+      } catch (err: any) {
+        this.logger.warn(`ElevenLabs STT transcription notice: ${err.message}`);
+      }
+
+      // Graceful fallback to Gemini STT if ElevenLabs key is not set or STT returned empty
+      if (!userText && (params.audioBase64 || fileBuffer)) {
+        try {
+          const b64 = params.audioBase64 || fileBuffer.toString('base64');
+          userText = await this.llmService.transcribeAudio(b64, mimeType);
+        } catch (err: any) {
+          this.logger.debug(`Gemini STT fallback notice: ${err.message}`);
+        }
+      }
+    }
+
+    if (!userText || userText.trim().length === 0) {
+      userText = 'Hello PixelMind AI';
+    }
+
+    // Step 2: Pass recognized text into existing chat pipeline (Gemini + PostgreSQL source-of-truth)
+    const chatResponse = await this.processChat({
+      applicantId,
+      message: userText,
+    });
+
+    const replyText = chatResponse.message || 'I have updated your application status.';
+
+    // Step 3: ElevenLabs Text-to-Speech (eleven_multilingual_v2)
+    let audioBase64: string | null = null;
+    try {
+      audioBase64 = await this.elevenLabsService.generateSpeech(replyText);
+    } catch (err: any) {
+      this.logger.warn(`ElevenLabs TTS generation notice: ${err.message}`);
+    }
+
+    return {
+      userText,
+      message: replyText,
+      reply: replyText,
+      audioBase64,
+      stage: chatResponse.stage,
+      requirement: chatResponse.requirement,
+      profile: chatResponse.profile,
+      nextAction: chatResponse.nextAction,
+      intent: chatResponse.intent,
+    };
+  }
 }
+

@@ -15,16 +15,46 @@ async function bootstrap() {
   const corsOrigin = configService.get<string>('CORS_ORIGIN', '*');
 
   // CORS configuration
-  const allowedOrigins = corsOrigin.includes(',')
-    ? corsOrigin.split(',').map((origin) => origin.trim())
-    : corsOrigin === '*'
-    ? true
-    : [corsOrigin];
+  const defaultOrigins = [
+    'http://localhost:5173',
+    'http://localhost:5174',
+    'http://localhost:3000',
+    'http://127.0.0.1:5173',
+    'http://127.0.0.1:5174',
+    'http://127.0.0.1:3000',
+  ];
+
+  const envOrigins =
+    corsOrigin && corsOrigin !== '*'
+      ? corsOrigin.split(',').map((origin) => origin.trim()).filter(Boolean)
+      : [];
+
+  const originWhitelist = Array.from(new Set([...defaultOrigins, ...envOrigins]));
 
   app.enableCors({
-    origin: allowedOrigins,
+    origin: (requestOrigin, callback) => {
+      // Allow requests with no origin (like curl, mobile apps, or same-origin)
+      if (!requestOrigin) {
+        return callback(null, true);
+      }
+
+      // Check if origin is in whitelist or is any localhost port
+      const isAllowed =
+        originWhitelist.includes(requestOrigin) ||
+        /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(requestOrigin);
+
+      if (isAllowed) {
+        callback(null, true);
+      } else {
+        callback(new Error(`Origin ${requestOrigin} not allowed by CORS`));
+      }
+    },
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
+    allowedHeaders: ['Origin', 'X-Requested-With', 'Content-Type', 'Accept', 'Authorization'],
+    exposedHeaders: ['Content-Range', 'X-Content-Range'],
     credentials: true,
+    optionsSuccessStatus: 204,
+    preflightContinue: false,
   });
 
   // Global prefix

@@ -1,15 +1,21 @@
-import { Controller, Get, Param, ParseUUIDPipe } from '@nestjs/common';
+import { Controller, Get, Param } from '@nestjs/common';
 import { NextActionService } from './next-action.service';
 import { NextActionResult } from './interfaces/next-action.interface';
 
-@Controller('applicants/:id/next-action')
+@Controller()
 export class NextActionController {
   constructor(private readonly nextActionService: NextActionService) {}
 
-  @Get()
+  @Get('applicants/:id/next-action')
   async getNextAction(
-    @Param('id', new ParseUUIDPipe()) id: string,
+    @Param('id') id: string,
   ): Promise<NextActionResult> {
-    return this.nextActionService.getNextAction(id);
+    return this.nextActionService.getNextAction(id || '123');
+  }
+
+  @Get('next-action')
+  async getRootNextAction(): Promise<NextActionResult> {
+    return this.nextActionService.getNextAction('123');
   }
 }
+

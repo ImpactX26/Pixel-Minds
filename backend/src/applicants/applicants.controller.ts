@@ -24,13 +24,18 @@ export class ApplicantsController {
   }
 
   @Get(':id')
-  async findOne(@Param('id', new ParseUUIDPipe()) id: string) {
+  async findOne(@Param('id') id: string) {
     return this.applicantsService.findById(id);
+  }
+
+  @Get('by-email/:email')
+  async findByEmail(@Param('email') email: string) {
+    return this.applicantsService.findByEmail(email);
   }
 
   @Patch(':id')
   async update(
-    @Param('id', new ParseUUIDPipe()) id: string,
+    @Param('id') id: string,
     @Body() updateApplicantDto: UpdateApplicantDto,
   ) {
     return this.applicantsService.update(id, updateApplicantDto);

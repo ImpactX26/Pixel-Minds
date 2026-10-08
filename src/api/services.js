@@ -17,12 +17,27 @@ export const journeyApi = {
 };
 
 export const documentApi = {
-  getDocuments() {
-    return apiClient.get("/documents");
+  getDocuments(applicantId = '123') {
+    return apiClient.get(`/applicants/${applicantId}/documents`);
   },
 
-  uploadDocument(documentData) {
-    return apiClient.post("/documents", documentData);
+  uploadDocument(applicantId = '123', file, onUploadProgress) {
+    const formData = new FormData();
+    formData.append('file', file);
+    return apiClient.post(`/applicants/${applicantId}/documents`, formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+      onUploadProgress,
+    });
+  },
+
+  processDocument(documentId, rawText) {
+    return apiClient.post(`/documents/${documentId}/process`, { rawText });
+  },
+
+  getVerificationResult(documentId) {
+    return apiClient.get(`/documents/${documentId}/verification`);
   },
 };
 
@@ -47,8 +62,13 @@ export const chatApi = {
     return apiClient.get("/chat/history");
   },
 
-  sendMessage(message) {
-    return apiClient.post("/chat/messages", {
+  getProfile(applicantId = '123') {
+    return apiClient.get(`/applicants/${applicantId}/profile`).catch(() => apiClient.get("/applicant/profile"));
+  },
+
+  sendMessage(message, applicantId = 'default') {
+    return apiClient.post("/ai/chat", {
+      applicantId,
       message,
     });
   },
