@@ -1,6 +1,6 @@
 # Educaro AI Companion - Backend
 
-NestJS + TypeScript + TypeORM backend connected to Supabase PostgreSQL database and Supabase Storage.
+NestJS + TypeScript + TypeORM backend connected to Supabase PostgreSQL database, Supabase Storage, and external AI/OCR extraction services.
 
 ---
 
@@ -13,7 +13,8 @@ NestJS REST API (/api/v1)
         ↓
 Domain Services & Business Logic
  ├── Supabase Storage (educaro-documents) → PDF/Image files
- └── Supabase PostgreSQL → Metadata, State, Profile, Journey
+ ├── Supabase PostgreSQL → Metadata, State, Profile, Journey
+ └── Member 4 Document Extraction Service (http://localhost:3001)
               ↓
   (Phase 4: Qualification Engine)
               ↓
@@ -41,12 +42,13 @@ backend/
 │   │   ├── journey.controller.ts
 │   │   ├── journey.service.ts
 │   │   └── journey.module.ts
-│   ├── documents/             # Document upload & management (Phase 3)
+│   ├── documents/             # Document upload, extraction client & management
 │   │   ├── dto/               # upload-document.dto.ts
 │   │   ├── entities/          # document.entity.ts
 │   │   ├── documents.controller.ts
 │   │   ├── documents.service.ts
-│   │   ├── storage.service.ts # Supabase Storage integration & sanitization
+│   │   ├── extraction.client.ts # HTTP client for Member 4 Extraction Service
+│   │   ├── storage.service.ts   # Supabase Storage integration & sanitization
 │   │   └── documents.module.ts
 │   ├── qualification/         # Qualification engine module (Phase 4)
 │   ├── next-action/           # Next Best Action module (Phase 5)
@@ -91,26 +93,26 @@ Base prefix: `/api/v1`
 
 ---
 
-### 4. Document APIs (Phase 3)
+### 4. Document & Extraction APIs
 
 #### **Upload Document**
-Accepts multipart form-data, validates file size (max 10MB) & MIME type (PDF, PNG, JPG), sanitizes the filename, uploads to Supabase Storage at `applicants/{applicantId}/documents/{documentId}/{filename}`, and saves metadata in PostgreSQL.
+Accepts multipart form-data, validates file size (max 10MB) & MIME type (PDF, PNG, JPG), sanitizes filename, uploads to Supabase Storage at `applicants/{applicantId}/documents/{documentId}/{filename}`, and saves metadata in PostgreSQL with status `uploaded`.
 
 - **`POST /api/v1/documents/upload`**
 - **Content-Type:** `multipart/form-data`
 - **Form Fields:**
   - `applicantId` *(string, UUID v4, required)*: Target applicant ID
   - `file` *(binary file, required)*: Document file (PDF, JPG, JPEG, PNG, max 10MB)
-  - `type` *(string, optional)*: E.g., `ACADEMIC_TRANSCRIPT`, `PASSPORT`, `CV`, `LANGUAGE_CERTIFICATE`
+  - `type` *(string, optional)*: E.g., `degree_certificate`, `academic_transcript`, `passport`, `cv`
 - **Response (`201 Created`):**
 ```json
 {
   "id": "e03552d3-eb19-4693-bdc8-ce32cb231be7",
   "applicantId": "e93c5285-9ddd-49b1-ac8e-febb597d6bc3",
   "name": "Bachelor_Degree_Certificate.pdf",
-  "type": "ACADEMIC_TRANSCRIPT",
+  "type": "degree_certificate",
   "status": "uploaded",
-  "fileUrl": "https://<project-ref>.supabase.co/storage/v1/object/public/educaro-documents/applicants/e93c5285-9ddd-49b1-ac8e-febb597d6bc3/documents/e03552d3-eb19-4693-bdc8-ce32cb231be7/Bachelor_Degree_Certificate.pdf",
+  "fileUrl": "https://<project-ref>.supabase.co/storage/v1/object/public/educaro-documents/...",
   "extractedData": {},
   "uploadedAt": "2026-10-08T08:45:25.105Z"
 }
@@ -118,51 +120,42 @@ Accepts multipart form-data, validates file size (max 10MB) & MIME type (PDF, PN
 
 #### **Get All Applicant Documents**
 - **`GET /api/v1/applicants/:id/documents`**
-- **Response (`200 OK`):**
-```json
-[
-  {
-    "id": "e03552d3-eb19-4693-bdc8-ce32cb231be7",
-    "applicantId": "e93c5285-9ddd-49b1-ac8e-febb597d6bc3",
-    "name": "Bachelor_Degree_Certificate.pdf",
-    "type": "ACADEMIC_TRANSCRIPT",
-    "status": "uploaded",
-    "fileUrl": "https://<project-ref>.supabase.co/storage/v1/object/public/...",
-    "extractedData": {},
-    "uploadedAt": "2026-10-08T08:45:25.105Z"
-  }
-]
-```
 
 #### **Get Single Document**
 - **`GET /api/v1/documents/:id`**
-- **Response (`200 OK`):**
+
+#### **Trigger Document Extraction Processing**
+Invokes Member 4's Document Extraction Service (`POST http://localhost:3001/api/v1/document-extraction/extract`):
+1. Transitions status to `processing`.
+2. Sends `documentId`, `documentUrl` (Supabase Storage URL), and `documentType` with configurable timeout.
+3. On success, updates status to `processed` and saves structured `extractedData`, `confidence`, and `metadata` to PostgreSQL.
+4. On failure, transitions status to `failed` and records error context.
+
+- **`POST /api/v1/documents/:id/process`**
+- **Response (`200 OK` on success):**
 ```json
 {
   "id": "e03552d3-eb19-4693-bdc8-ce32cb231be7",
   "applicantId": "e93c5285-9ddd-49b1-ac8e-febb597d6bc3",
   "name": "Bachelor_Degree_Certificate.pdf",
-  "type": "ACADEMIC_TRANSCRIPT",
-  "status": "uploaded",
+  "type": "degree_certificate",
+  "status": "processed",
   "fileUrl": "https://<project-ref>.supabase.co/storage/v1/object/public/...",
-  "extractedData": {},
+  "extractedData": {
+    "fullName": "Rahul Sharma",
+    "dateOfBirth": "2001-05-15",
+    "degree": "Bachelor of Technology in Computer Science",
+    "university": "Delhi Technological University",
+    "graduationYear": "2024",
+    "institutionLocation": "New Delhi, India",
+    "gradeOrGpa": "8.8 / 10.0",
+    "confidence": 0.96,
+    "metadata": {
+      "pageCount": 1,
+      "ocrEngine": "Tesseract/AI-Vision"
+    }
+  },
   "uploadedAt": "2026-10-08T08:45:25.105Z"
-}
-```
-
-#### **Trigger Document Processing**
-Transitions document status to `processing` and prepares the record for external OCR / AI extraction (Member 4 integration).
-
-- **`POST /api/v1/documents/:id/process`**
-- **Response (`200 OK`):**
-```json
-{
-  "documentId": "e03552d3-eb19-4693-bdc8-ce32cb231be7",
-  "applicantId": "e93c5285-9ddd-49b1-ac8e-febb597d6bc3",
-  "name": "Bachelor_Degree_Certificate.pdf",
-  "type": "ACADEMIC_TRANSCRIPT",
-  "status": "processing",
-  "message": "Document queued for processing"
 }
 ```
 
@@ -180,41 +173,36 @@ Transitions document status to `processing` and prepares the record for external
 
 ---
 
-## ⚙️ Setup & Running
+## ⚙️ Environment Configuration
 
-### 1. Install Dependencies
-```bash
-cd backend
-npm install
-```
-
-### 2. Configure Environment
-Copy `.env.example` to `.env`:
-```bash
-cp .env.example .env
-```
-
-Configure Supabase variables:
+Add to your `backend/.env`:
 ```env
 PORT=3000
 NODE_ENV=development
 API_PREFIX=api/v1
 CORS_ORIGIN=http://localhost:5173,http://localhost:3000
 
-# PostgreSQL
+# PostgreSQL (Supabase Session Pooler)
 DATABASE_URL=postgresql://postgres.[project-ref]:[password]@aws-0-[region].pooler.supabase.com:5432/postgres
 DB_SSL=true
 DB_SYNCHRONIZE=false
 
 # Supabase Storage
 SUPABASE_URL=https://[project-ref].supabase.co
-SUPABASE_SERVICE_ROLE_KEY=
 SUPABASE_STORAGE_BUCKET=educaro-documents
 MAX_FILE_SIZE_MB=10
+
+# Document Extraction Service (Member 4)
+DOCUMENT_EXTRACTION_SERVICE_URL=http://localhost:3001
+DOCUMENT_EXTRACTION_TIMEOUT_MS=30000
 ```
 
-### 3. Start Server
+---
+
+## 🚀 Running the Server
+
 ```bash
+cd backend
 npm run build
 npm run start:prod
 ```

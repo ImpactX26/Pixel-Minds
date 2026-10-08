@@ -11,6 +11,7 @@ import { ConfigService } from '@nestjs/config';
 import { Document } from './entities/document.entity';
 import { Applicant } from '../applicants/entities/applicant.entity';
 import { StorageService } from './storage.service';
+import { DocumentExtractionClient } from './extraction.client';
 import { UploadDocumentDto } from './dto/upload-document.dto';
 import { DocumentStatus } from '../common/enums';
 import { v4 as uuidv4 } from 'uuid';
@@ -36,6 +37,7 @@ export class DocumentsService {
     @InjectRepository(Applicant)
     private readonly applicantRepository: Repository<Applicant>,
     private readonly storageService: StorageService,
+    private readonly extractionClient: DocumentExtractionClient,
     private readonly configService: ConfigService,
   ) {
     this.maxFileSizeMb =
@@ -136,22 +138,43 @@ export class DocumentsService {
     return document;
   }
 
-  async processDocument(id: string) {
+  async processDocument(id: string): Promise<Document> {
     const document = await this.findById(id);
 
-    // Transition status to PROCESSING
+    // 1. Set status to PROCESSING and persist
     document.status = DocumentStatus.PROCESSING;
-    const updated = await this.documentRepository.save(document);
+    await this.documentRepository.save(document);
+    this.logger.log(`Document ${id} marked as PROCESSING`);
 
-    this.logger.log(`Document ${id} status updated to PROCESSING`);
+    try {
+      // 2. Call Member 4's extraction service
+      const extractionResult = await this.extractionClient.extractDocument({
+        documentId: document.id,
+        documentUrl: document.fileUrl,
+        documentType: document.type,
+      });
 
-    return {
-      documentId: updated.id,
-      applicantId: updated.applicantId,
-      name: updated.name,
-      type: updated.type,
-      status: updated.status,
-      message: 'Document queued for processing',
-    };
+      // 3. Save extractedData and status on success
+      document.status = DocumentStatus.PROCESSED;
+      document.extractedData = {
+        ...(extractionResult.extractedData || {}),
+        confidence: extractionResult.confidence,
+        metadata: extractionResult.metadata || {},
+      };
+
+      const saved = await this.documentRepository.save(document);
+      this.logger.log(`Document ${id} successfully processed and updated`);
+      return saved;
+    } catch (error: any) {
+      // 4. Update status to FAILED on extraction failure and persist error state
+      document.status = DocumentStatus.FAILED;
+      document.extractedData = {
+        error: error.message,
+        failedAt: new Date().toISOString(),
+      };
+      await this.documentRepository.save(document);
+      this.logger.error(`Document ${id} processing failed: ${error.message}`);
+      throw error;
+    }
   }
 }
