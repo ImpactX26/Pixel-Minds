@@ -198,18 +198,21 @@ function ProgressCard() {
 
 function NextAction({ onUpload, isUploading }) {
   return (
-    <div className="next-action card">
-      <div className="card-heading">
-        <span><Icon name="file" size={17}/> Next Action</span><em>HIGH PRIORITY</em>
+    <div className="next-action card" style={{ padding: '24px', background: 'linear-gradient(to bottom, #ffffff, #f8fafc)', borderTop: '4px solid #2563eb' }}>
+      <div className="card-heading" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+        <span style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '15px', fontWeight: '800', color: '#1e293b' }}><Icon name="bell" size={18} color="#2563eb"/> ACTION REQUIRED</span>
+        <em style={{ background: '#fee2e2', color: '#ef4444', padding: '4px 10px', borderRadius: '12px', fontSize: '11px', fontStyle: 'normal', fontWeight: '800', letterSpacing: '0.5px' }}>HIGH PRIORITY</em>
       </div>
-      <div className="action-main">
-        <div className="doc-icon"><Icon name="file" size={30}/></div>
+      <div className="action-main" style={{ display: 'flex', gap: '16px', marginBottom: '20px' }}>
+        <div className="doc-icon" style={{ width: '50px', height: '50px', borderRadius: '12px', background: '#eff6ff', color: '#2563eb', display: 'grid', placeItems: 'center', flexShrink: 0 }}>
+          <Icon name="file" size={26}/>
+        </div>
         <div>
-          <h3>Upload your German<br/>language certificate</h3>
-          <p>This is required for your employment pathway.</p>
+          <h3 style={{ margin: '0 0 6px', fontSize: '15px', color: '#1e293b', lineHeight: '1.3' }}>Upload your German<br/>language certificate</h3>
+          <p style={{ margin: 0, fontSize: '13px', color: '#64748b', lineHeight: '1.4' }}>This is required to unlock your visa application step.</p>
         </div>
       </div>
-      <div style={{ marginTop: '15px', width: '100%' }}>
+      <div style={{ width: '100%' }}>
         <LoadingButton onUpload={onUpload} label="Upload Document" isUploading={isUploading} />
       </div>
     </div>
@@ -1257,38 +1260,136 @@ function App() {
       case 'documents':
         return (
           <div className="dashboard">
-            <div className="card">
-              <div className="section-title"><h2>Documents</h2></div>
-              <p>View and upload your documents.</p>
+            <div className="card" style={{ padding: '32px' }}>
+              <div className="section-title" style={{ marginBottom: '24px' }}>
+                <h2>My Documents</h2>
+                <p>Manage and track the status of your required documents.</p>
+              </div>
               
-              <div style={{ marginTop: '1.5rem', marginBottom: '2rem' }}>
-                <h3 style={{ fontSize: '15px', marginBottom: '10px', color: '#475569' }}>Uploaded Files</h3>
-                {uploadedFiles.length === 0 ? (
-                  <div style={{ padding: '20px', background: '#f8fafc', borderRadius: '8px', border: '1px dashed #cbd5e1', color: '#64748b', textAlign: 'center' }}>
-                    No documents uploaded yet.
-                  </div>
-                ) : (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px', marginBottom: '32px' }}>
+                <div style={{ padding: '20px', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '12px', display: 'flex', gap: '16px', alignItems: 'center' }}>
+                  <div style={{ width: '48px', height: '48px', borderRadius: '12px', background: '#dcfce7', color: '#16a34a', display: 'grid', placeItems: 'center' }}><Icon name="check" size={24}/></div>
+                  <div><h4 style={{ margin: 0, color: '#166534', fontSize: '15px' }}>Resume / CV</h4><span style={{ fontSize: '13px', color: '#15803d', fontWeight: '600' }}>Verified & Approved</span></div>
+                </div>
+                <div style={{ padding: '20px', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '12px', display: 'flex', gap: '16px', alignItems: 'center' }}>
+                  <div style={{ width: '48px', height: '48px', borderRadius: '12px', background: '#dcfce7', color: '#16a34a', display: 'grid', placeItems: 'center' }}><Icon name="check" size={24}/></div>
+                  <div><h4 style={{ margin: 0, color: '#166534', fontSize: '15px' }}>University Degree</h4><span style={{ fontSize: '13px', color: '#15803d', fontWeight: '600' }}>Verified & Approved</span></div>
+                </div>
+                <div style={{ padding: '20px', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '12px', display: 'flex', gap: '16px', alignItems: 'center' }}>
+                  <div style={{ width: '48px', height: '48px', borderRadius: '12px', background: '#fef3c7', color: '#d97706', display: 'grid', placeItems: 'center' }}><Icon name="clock" size={24}/></div>
+                  <div><h4 style={{ margin: 0, color: '#b45309', fontSize: '15px' }}>Passport Copy</h4><span style={{ fontSize: '13px', color: '#d97706', fontWeight: '600' }}>In Review</span></div>
+                </div>
+                <div style={{ padding: '20px', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '12px', display: 'flex', gap: '16px', alignItems: 'center' }}>
+                  <div style={{ width: '48px', height: '48px', borderRadius: '12px', background: '#dbeafe', color: '#2563eb', display: 'grid', placeItems: 'center' }}><Icon name="file" size={24}/></div>
+                  <div><h4 style={{ margin: 0, color: '#1e3a8a', fontSize: '15px' }}>Language Certificate</h4><span style={{ fontSize: '13px', color: '#2563eb', fontWeight: '600' }}>Pending Upload</span></div>
+                </div>
+              </div>
+
+              {uploadedFiles.length > 0 && (
+                <div style={{ marginBottom: '24px' }}>
+                  <h3 style={{ fontSize: '15px', marginBottom: '12px', color: '#475569' }}>Recently Uploaded</h3>
                   <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '8px' }}>
                     {uploadedFiles.map((file, i) => (
-                      <li key={i} style={{ padding: '12px 16px', background: '#f1f5f9', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '12px', fontWeight: '500', color: '#334155' }}>
-                        <Icon name="file" size={18} /> {file}
-                        <span style={{ marginLeft: 'auto', color: '#10b981', fontSize: '13px' }}>Verified</span>
+                      <li key={i} style={{ padding: '12px 16px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '12px', fontWeight: '500', color: '#334155' }}>
+                        <Icon name="file" size={18} /> <span style={{ color: '#64748b' }}>{file}</span>
+                        <span style={{ marginLeft: 'auto', color: '#10b981', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: '700' }}><Icon name="check" size={14}/> Uploaded</span>
                       </li>
                     ))}
                   </ul>
-                )}
-              </div>
+                </div>
+              )}
 
-              <div style={{marginTop: '1rem', width: '220px'}}>
-                <LoadingButton onUpload={handleUpload} label="Upload Document" isUploading={isUploading} />
+              <div style={{ padding: '40px 20px', background: '#f8fafc', border: '2px dashed #cbd5e1', borderRadius: '12px', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                <div style={{ width: '56px', height: '56px', background: '#e2e8f0', borderRadius: '50%', display: 'grid', placeItems: 'center', color: '#64748b', marginBottom: '16px' }}><Icon name="file" size={28}/></div>
+                <h3 style={{ margin: '0 0 8px', fontSize: '16px', color: '#1e293b' }}>Upload a new document</h3>
+                <p style={{ margin: '0 0 20px', fontSize: '14px', color: '#64748b' }}>Drag and drop your files here or click the button below. PDF, JPG, PNG up to 10MB.</p>
+                <div style={{ width: '220px' }}>
+                  <LoadingButton onUpload={handleUpload} label="Browse Files" isUploading={isUploading} />
+                </div>
               </div>
             </div>
           </div>
         );
       case 'requirements':
-        return <div className="dashboard"><div className="card"><div className="section-title"><h2>Requirements</h2></div><p>Check the requirements for your Germany journey.</p></div></div>;
+        return (
+          <div className="dashboard">
+            <div className="card" style={{ padding: '32px' }}>
+              <div className="section-title" style={{ marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <div>
+                  <h2>Pathway Requirements</h2>
+                  <p>Track your eligibility and essential milestones for Germany.</p>
+                </div>
+                <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', color: '#166534', padding: '6px 14px', borderRadius: '20px', fontSize: '13px', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Icon name="check" size={14}/> 75% Completed
+                </div>
+              </div>
+              
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                {[
+                  { title: 'Bachelor’s Degree in Nursing', desc: 'Officially recognized degree from your home country.', status: 'done' },
+                  { title: 'B1 German Language Proficiency', desc: 'Goethe, telc, or ÖSD certificate.', status: 'pending' },
+                  { title: 'Minimum 1 Year Work Experience', desc: 'Clinical experience in a hospital setting.', status: 'done' },
+                  { title: 'Valid Passport', desc: 'Must be valid for at least 12 months from application date.', status: 'done' },
+                ].map((req, i) => (
+                  <div key={i} style={{ display: 'flex', gap: '16px', padding: '20px', background: req.status === 'done' ? '#f8fafc' : '#fff', border: req.status === 'done' ? '1px solid #e2e8f0' : '1px solid #cbd5e1', borderRadius: '12px', opacity: req.status === 'done' ? 0.7 : 1, boxShadow: req.status === 'pending' ? '0 4px 12px rgba(0,0,0,0.04)' : 'none' }}>
+                    <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: req.status === 'done' ? '#10b981' : '#f1f5f9', color: req.status === 'done' ? '#fff' : '#94a3b8', display: 'grid', placeItems: 'center', flexShrink: 0 }}>
+                      {req.status === 'done' ? <Icon name="check" size={16}/> : <span style={{fontSize: '14px', fontWeight: 'bold'}}>{i+1}</span>}
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <h4 style={{ margin: '0 0 4px', fontSize: '16px', color: '#1e293b', textDecoration: req.status === 'done' ? 'line-through' : 'none' }}>{req.title}</h4>
+                      <p style={{ margin: 0, fontSize: '14px', color: '#64748b' }}>{req.desc}</p>
+                      {req.status === 'pending' && <button style={{ marginTop: '14px', padding: '8px 16px', background: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe', borderRadius: '8px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px', transition: 'all 0.2s ease' }} onMouseOver={(e) => { e.currentTarget.style.background = '#dbeafe'; e.currentTarget.style.transform = 'translateY(-1px)'; }} onMouseOut={(e) => { e.currentTarget.style.background = '#eff6ff'; e.currentTarget.style.transform = 'none'; }}><Icon name="file" size={14}/> Submit Proof</button>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        );
       case 'actions':
-        return <div className="dashboard"><div className="card" style={{paddingBottom: '2rem'}}><div className="section-title"><h2>Next Actions</h2></div><p style={{marginBottom: '1rem'}}>Complete the following actions to proceed.</p><NextAction onUpload={handleUpload} isUploading={isUploading} /></div></div>;
+        return (
+          <div className="dashboard">
+            <div className="card" style={{ padding: '32px' }}>
+              <div className="section-title" style={{ marginBottom: '24px' }}>
+                <h2>Next Actions</h2>
+                <p>Your step-by-step action plan to reach Germany.</p>
+              </div>
+              
+              <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '16px', padding: '24px', marginBottom: '32px', position: 'relative', overflow: 'hidden' }}>
+                <div style={{ position: 'absolute', top: 0, left: 0, width: '4px', height: '100%', background: '#2563eb' }} />
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '20px' }}>
+                  <div>
+                    <span style={{ background: '#dbeafe', color: '#1d4ed8', padding: '4px 10px', borderRadius: '12px', fontSize: '11px', fontWeight: '800', letterSpacing: '0.5px' }}>ACTION REQUIRED</span>
+                    <h3 style={{ margin: '12px 0 6px', fontSize: '20px', color: '#1e3a8a' }}>Upload Language Certificate</h3>
+                    <p style={{ margin: 0, color: '#3b82f6', fontSize: '14px', lineHeight: '1.5' }}>Your B1 German certificate is missing and blocking the visa application process. Please submit it as soon as possible.</p>
+                  </div>
+                  <div style={{ background: '#fff', width: '56px', height: '56px', borderRadius: '14px', display: 'grid', placeItems: 'center', color: '#2563eb', boxShadow: '0 4px 12px rgba(37,99,235,0.1)' }}>
+                    <Icon name="file" size={28}/>
+                  </div>
+                </div>
+                <div style={{ width: '220px' }}>
+                  <LoadingButton onUpload={handleUpload} label="Upload Certificate" isUploading={isUploading} />
+                </div>
+              </div>
+
+              <div style={{ padding: '0 16px' }}>
+                <h3 style={{ fontSize: '13px', color: '#64748b', marginBottom: '24px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '1px' }}>Upcoming Steps</h3>
+                <div style={{ borderLeft: '2px dashed #e2e8f0', paddingLeft: '28px', display: 'flex', flexDirection: 'column', gap: '32px', position: 'relative' }}>
+                  <div style={{ position: 'relative' }}>
+                    <div style={{ position: 'absolute', left: '-36px', top: '2px', width: '14px', height: '14px', borderRadius: '50%', background: '#fff', border: '2px solid #cbd5e1' }} />
+                    <h4 style={{ margin: '0 0 6px', fontSize: '16px', color: '#475569' }}>Sign Employment Contract</h4>
+                    <p style={{ margin: 0, fontSize: '14px', color: '#94a3b8' }}>Review and sign the contract from your employer in Germany.</p>
+                  </div>
+                  <div style={{ position: 'relative' }}>
+                    <div style={{ position: 'absolute', left: '-36px', top: '2px', width: '14px', height: '14px', borderRadius: '50%', background: '#fff', border: '2px solid #cbd5e1' }} />
+                    <h4 style={{ margin: '0 0 6px', fontSize: '16px', color: '#475569' }}>Visa Application Interview</h4>
+                    <p style={{ margin: 0, fontSize: '14px', color: '#94a3b8' }}>Attend the embassy appointment for your work visa.</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
       case 'assistant':
       case 'messages':
         return <div className="dashboard"><ChatPanel applicantId={applicantId} /></div>;
