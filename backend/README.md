@@ -403,6 +403,35 @@ Provider-independent coordination layer that reads live database facts (Applican
 
 ---
 
+### 8. Telegram Bot Integration
+
+Multi-channel integration connecting Telegram users to the deterministic AI Orchestrator with applicant account mapping and message persistence in PostgreSQL.
+
+#### **Telegram Webhook Endpoint**
+- **`POST /api/v1/telegram/webhook`**
+- Receives standard Telegram Bot webhook updates.
+
+#### **Telegram Simulation / Test Chat Endpoint**
+- **`POST /api/v1/telegram/test-chat`**
+- **Body:**
+```json
+{
+  "chatId": "987654321",
+  "message": "/documents"
+}
+```
+
+#### **Supported Bot Commands:**
+- `/start`: Welcome greeting and command menu.
+- `/help`: Detailed command list and sample queries.
+- `/status`: Maps to `"What is my application status?"`.
+- `/documents`: Maps to `"What documents am I missing?"`.
+- `/qualification`: Maps to `"What is my qualification status?"`.
+- `/next`: Maps to `"What should I do next?"`.
+- **Plain Text Queries**: Handled seamlessly by the deterministic AI Orchestrator.
+
+---
+
 ## ⚙️ Environment Configuration
 
 Add to your `backend/.env`:
@@ -425,6 +454,13 @@ MAX_FILE_SIZE_MB=10
 # Document Extraction Service (Member 4)
 DOCUMENT_EXTRACTION_SERVICE_URL=http://localhost:3001
 DOCUMENT_EXTRACTION_TIMEOUT_MS=30000
+
+# Telegram Bot Integration
+TELEGRAM_BOT_TOKEN=
+TELEGRAM_TEST_CHAT_ID=987654321
+TELEGRAM_TEST_APPLICANT_ID=<applicant-uuid>
+TELEGRAM_ENABLE_POLLING=false
+BACKEND_URL=http://localhost:3000/api/v1
 ```
 
 ---
@@ -434,5 +470,6 @@ DOCUMENT_EXTRACTION_TIMEOUT_MS=30000
 ```bash
 cd backend
 npm run build
-npm run start:prod
+npm run start:dev
 ```
+

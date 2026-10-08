@@ -1,3 +1,4 @@
+import * as path from 'path';
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
@@ -11,12 +12,20 @@ import { QualificationModule } from './qualification/qualification.module';
 import { NextActionModule } from './next-action/next-action.module';
 import { ConversationsModule } from './conversations/conversations.module';
 import { AiModule } from './ai/ai.module';
+import { TelegramModule } from './telegram/telegram.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      envFilePath: '.env',
+      envFilePath: [
+        '.env',
+        'backend/.env',
+        path.resolve(process.cwd(), '.env'),
+        path.resolve(process.cwd(), 'backend/.env'),
+        path.resolve(__dirname, '../../.env'),
+        path.resolve(__dirname, '../.env'),
+      ],
     }),
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
@@ -70,6 +79,7 @@ import { AiModule } from './ai/ai.module';
     NextActionModule,
     ConversationsModule,
     AiModule,
+    TelegramModule,
   ],
 })
 export class AppModule {}
