@@ -1,4 +1,26 @@
+<<<<<<< HEAD
 node_modules/
 dist/
 .env
 .DS_Store
+=======
+# Dependencies
+node_modules/
+dist/
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS Files
+.DS_Store
+Thumbs.db
+
+# Local ML/OCR model files
+*.traineddata
+>>>>>>> f3dedda0467186d5ed3f29de4b3f25dad50b626e
