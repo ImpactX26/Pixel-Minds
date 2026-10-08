@@ -273,6 +273,71 @@ Deterministic rule evaluation engine that evaluates applicant facts (Profile, Jo
 
 ---
 
+### 6. Next Best Action (NBA) Engine APIs (Phase 5)
+
+Deterministic decision engine that identifies exactly ONE highest-priority action for the applicant to progress their German education / relocation pathway. Persists results to the `next_actions` table in PostgreSQL.
+
+#### **Priority Hierarchy (Strict Deterministic Order):**
+1. `RESOLVE_CONFLICT` (`HIGH`): Mismatch between profile and official extracted documents (e.g., University discrepancy).
+2. `COMPLETE_PROFILE` (`HIGH`): Mandatory profile facts missing (e.g., Date of Birth, Full Name, Goal).
+3. `UPLOAD_DOCUMENT` (`HIGH`): Mandatory required documents not yet uploaded (Degree Certificate, Passport, German Certificate).
+4. `VERIFY_DOCUMENT` (`HIGH`): Low confidence document extraction requiring verification or re-upload.
+5. `COMPLETE_REQUIREMENT` (`MEDIUM`): Remaining qualification items.
+6. `CONTACT_EDUCARO` (`MEDIUM`): All mandatory requirements satisfied; profile is qualified for next step.
+7. `OPTIONAL_IMPROVEMENT` (`LOW`): Non-mandatory profile enhancement (work experience, skills).
+8. `NO_ACTION` (`LOW`): Application fully completed.
+
+#### **Get Next Best Action**
+- **`GET /api/v1/applicants/:id/next-action`**
+- Returns the single highest-priority next action for the applicant.
+
+- **Response Examples:**
+
+*Missing Profile Field:*
+```json
+{
+  "id": "c2f6c940-4ea6-47d8-abeb-17494add3ede",
+  "applicantId": "66133de9-3d01-4144-a67d-c58a4cb528de",
+  "action": "COMPLETE_PROFILE",
+  "title": "Add your date of birth",
+  "reason": "Your date of birth is required to continue your application.",
+  "priority": "HIGH",
+  "status": "PENDING",
+  "requirementCode": "DATE_OF_BIRTH",
+  "createdAt": "2026-10-08T10:21:00.000Z",
+  "updatedAt": "2026-10-08T10:21:00.000Z"
+}
+```
+
+*Conflict Detected:*
+```json
+{
+  "id": "afac828c-4694-4b25-ba9d-43bcb8142d5f",
+  "applicantId": "rohan-id-guid",
+  "action": "RESOLVE_CONFLICT",
+  "title": "Resolve your university information",
+  "reason": "Your profile university does not match your degree certificate.",
+  "priority": "HIGH",
+  "status": "PENDING",
+  "requirementCode": "UNIVERSITY"
+}
+```
+
+*Qualified / Ready for Next Step:*
+```json
+{
+  "id": "09e08140-6b46-4191-8b7b-025ebc63373a",
+  "applicantId": "aditya-id-guid",
+  "action": "CONTACT_EDUCARO",
+  "title": "Your profile is ready for the next step",
+  "reason": "Your required information and documents are complete.",
+  "priority": "MEDIUM",
+  "status": "PENDING"
+}
+```
+
+---
+
 ## 📜 Supported Requirement Statuses (`RequirementStatus` Enum)
 
 - `SATISFIED`: Requirement conditions fully met.
