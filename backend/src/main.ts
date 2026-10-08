@@ -54,8 +54,14 @@ async function bootstrap() {
   logger.log(`====================================================`);
 }
 
-bootstrap().catch((err) => {
+bootstrap().catch((err: any) => {
   const logger = new Logger('BootstrapError');
-  logger.error('Failed to bootstrap Educaro backend application', err);
+  if (err?.code === 'EADDRINUSE') {
+    logger.error(
+      `⚠️ Port ${err.port || 3000} is already in use by another running process. Please stop the existing backend instance before restarting.`,
+    );
+  } else {
+    logger.error('Failed to bootstrap Educaro backend application', err);
+  }
   process.exit(1);
 });

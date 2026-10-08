@@ -37,7 +37,7 @@ export class AiOrchestrator {
    * Process a user chat message through the AI Orchestrator coordination layer.
    */
   async processChat(dto: ChatRequestDto): Promise<ChatResponse> {
-    const { applicantId, message } = dto;
+    const { applicantId, message, channel = ConversationChannel.WEB } = dto;
 
     // 1. Validate applicant existence
     const applicant = await this.applicantRepository.findOne({
@@ -70,10 +70,10 @@ export class AiOrchestrator {
     );
 
     // 5. Save conversation history in PostgreSQL
-    await this.saveConversation(applicantId, message, responseText);
+    await this.saveConversation(applicantId, message, responseText, channel);
 
     this.logger.log(
-      `AI Orchestrator handled chat for applicant ${applicantId} [Intent: ${intent}]`,
+      `AI Orchestrator handled chat for applicant ${applicantId} [Channel: ${channel}, Intent: ${intent}]`,
     );
 
     return {
@@ -222,12 +222,13 @@ export class AiOrchestrator {
     applicantId: string,
     userMessage: string,
     assistantResponse: string,
+    channel: ConversationChannel = ConversationChannel.WEB,
   ): Promise<void> {
     try {
       // 1. User message
       const userConv = this.conversationRepository.create({
         applicantId,
-        channel: ConversationChannel.WEB,
+        channel,
         sender: MessageSender.APPLICANT,
         message: userMessage,
       });
@@ -236,7 +237,7 @@ export class AiOrchestrator {
       // 2. AI Assistant message
       const aiConv = this.conversationRepository.create({
         applicantId,
-        channel: ConversationChannel.WEB,
+        channel,
         sender: MessageSender.AI,
         message: assistantResponse,
       });
