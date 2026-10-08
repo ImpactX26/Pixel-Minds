@@ -81,7 +81,7 @@ const steps = [
 ];
 
 function Logo() {
-  return <div className="logo"><span className="logo-mark">E</span><span>Educa<span className="logo-blue">ro</span></span><small>AI Companion</small></div>;
+  return <div className="logo"><span className="logo-mark">e</span><span>educa<span className="logo-blue">ro</span></span></div>;
 }
 
 function Sidebar({ active, setActive }) {
