@@ -22,13 +22,10 @@ It brings applicant information, documents, qualification checks, AI assistance,
 <img width="1600" height="839" alt="image" src="https://github.com/user-attachments/assets/60af47be-9566-49d2-8150-a1d61a1ad8e4" />
 
 
-### AI Companion
+### Eligibility Assessment
 
-![AI Companion](./screenshots/ai-companion.png)
+<img width="1600" height="834" alt="image" src="https://github.com/user-attachments/assets/13847f9d-6f16-4994-b37f-63d3a06ab3a9" />
 
-### Document Processing
-
-![Document Processing](./screenshots/document-processing.png)
 
 ### Journey & Progress
 
@@ -40,7 +37,6 @@ It brings applicant information, documents, qualification checks, AI assistance,
 <img width="1159" height="888" alt="image" src="https://github.com/user-attachments/assets/683f7252-7536-4071-8fa5-33be0cdc01c1" />
 
 
-> Place all images inside the `screenshots/` folder.
 
 ---
 
