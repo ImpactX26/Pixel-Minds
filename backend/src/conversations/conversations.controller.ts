@@ -1,4 +1,4 @@
-import { Controller, Get, Param, HttpCode, HttpStatus } from '@nestjs/common';
+import { Controller, Get, Delete, Post, Param, Body, HttpCode, HttpStatus } from '@nestjs/common';
 import { ConversationsService, FormattedChatMessage } from './conversations.service';
 
 @Controller('applicants')
@@ -12,6 +12,15 @@ export class ConversationsController {
   ): Promise<FormattedChatMessage[]> {
     return this.conversationsService.getHistory(applicantId);
   }
+
+  @Delete(':applicantId/chat/history')
+  @HttpCode(HttpStatus.OK)
+  async clearChatHistory(
+    @Param('applicantId') applicantId: string,
+  ): Promise<{ message: string; success: boolean }> {
+    await this.conversationsService.clearHistory(applicantId);
+    return { message: 'Chat history cleared successfully', success: true };
+  }
 }
 
 @Controller('chat')
@@ -22,5 +31,21 @@ export class DirectChatController {
   @HttpCode(HttpStatus.OK)
   async getDefaultChatHistory(): Promise<FormattedChatMessage[]> {
     return this.conversationsService.getHistory('default');
+  }
+
+  @Delete('history')
+  @HttpCode(HttpStatus.OK)
+  async clearDefaultChatHistory(): Promise<{ message: string; success: boolean }> {
+    await this.conversationsService.clearHistory('default');
+    return { message: 'Chat history cleared successfully', success: true };
+  }
+
+  @Post('clear')
+  @HttpCode(HttpStatus.OK)
+  async clearChat(
+    @Body() body: { applicantId?: string },
+  ): Promise<{ message: string; success: boolean }> {
+    await this.conversationsService.clearHistory(body?.applicantId || 'default');
+    return { message: 'Chat history cleared successfully', success: true };
   }
 }

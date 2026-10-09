@@ -13,12 +13,22 @@ import { ConversationsModule } from './conversations/conversations.module';
 import { AiModule } from './ai/ai.module';
 import { CvModule } from './cv/cv.module';
 import { ConclusionModule } from './conclusion/conclusion.module';
+import { TelegramModule } from './telegram/telegram.module';
+
+import * as path from 'path';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      envFilePath: '.env',
+      envFilePath: [
+        path.resolve(process.cwd(), '.env'),
+        path.resolve(process.cwd(), 'backend', '.env'),
+        path.resolve(__dirname, '..', '..', '.env'),
+        path.resolve(__dirname, '..', '.env'),
+        '.env',
+        'backend/.env',
+      ],
     }),
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
@@ -100,6 +110,7 @@ import { ConclusionModule } from './conclusion/conclusion.module';
     AiModule,
     CvModule,
     ConclusionModule,
+    TelegramModule,
   ],
 })
 export class AppModule {}

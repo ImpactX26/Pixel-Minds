@@ -78,6 +78,10 @@ const Icon = ({ name, size = 20, stroke = 2, className = '' }) => {
     mic: <><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/><line x1="8" y1="22" x2="16" y2="22"/></>,
     volume: <><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></>,
     award: <><circle cx="12" cy="8" r="6"/><path d="M15.5 14 17 22l-5-3-5 3 1.5-8"/></>,
+    maximize: <><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></>,
+    minimize: <><polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="14" y1="10" x2="21" y2="3"/><line x1="3" y1="21" x2="10" y2="14"/></>,
+    sparkles: <><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/></>,
+    trash: <><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></>,
   };
   return <svg className={className} width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={stroke} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name]}</svg>;
 };
@@ -499,7 +503,7 @@ function ProgressCard() {
   );
 }
 
-function NextAction({ onUpload, isUploading, applicantId = '123' }) {
+function NextAction({ onUpload, isUploading, applicantId }) {
   const [actionData, setActionData] = useState(null);
 
   const fetchAction = useCallback(() => {
@@ -680,7 +684,7 @@ function ApplicationStatus() {
   return <section className="status card"><div className="status-title"><b>My Application Status</b><button>View Details</button></div>{rows.map(([label,value,color],i) => <div className="status-row" key={label}><span className={`status-icon ${color}`}><Icon name={i === 0 ? 'check' : i === 4 ? 'clock' : 'file'} size={15}/></span><div className="status-content"><div><b>{label}</b><span>{value}</span></div>{i < 3 && <div className="bar"><i style={{width: i === 0 ? '92%' : '75%'}}/></div>}</div></div>)}</section>;
 }
 
-function ProfileView() {
+function ProfileView({ applicantId }) {
   const [profile, setProfile] = useState({
     personal: { fullName: '', dateOfBirth: '', nationality: '' },
     education: { degree: '', field: '', institution: '', graduationYear: '' },
@@ -688,41 +692,81 @@ function ProfileView() {
     skills: { technicalSkills: [], otherSkills: [] },
     languages: []
   });
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
-  const applicantId = '123';
-
-  useEffect(() => {
-    // Initial fetch from backend
-    chatApi.getProfile(applicantId).then(res => {
+  const fetchProfile = (id) => {
+    if (!id) return;
+    setLoading(true);
+    setError(null);
+    chatApi.getProfile(id).then(res => {
       if (res && (res.data || res)) {
         const data = res.data || res;
-        if (data.education || data.skills || data.personal || data.employment || data.languages) {
-          setProfile(prev => ({
-            personal: { ...prev.personal, ...(data.personal || {}) },
-            education: { ...prev.education, ...(data.education || {}) },
-            employment: { ...prev.employment, ...(data.employment || {}) },
-            skills: {
-              technicalSkills: data.skills?.technicalSkills || prev.skills.technicalSkills,
-              otherSkills: data.skills?.otherSkills || prev.skills.otherSkills,
-            },
-            languages: data.languages || prev.languages,
-          }));
-        }
+        const personalData = data.personal || data.additionalInfo?.personal || {};
+        const empData = data.employment || (Array.isArray(data.workExperience) ? data.workExperience[0] : {}) || {};
+        const rawSkills = data.skills?.technicalSkills || (Array.isArray(data.skills) ? data.skills : []);
+        const rawLangs = Array.isArray(data.languages) ? data.languages.map(l => ({
+          language: l.language || l.name || '',
+          proficiency: l.proficiency || l.level || 'Documented'
+        })) : [];
+
+        setProfile({
+          personal: {
+            fullName: personalData.fullName || data.name || '',
+            dateOfBirth: personalData.dateOfBirth || '',
+            nationality: personalData.nationality || data.country || '',
+          },
+          education: {
+            degree: data.education?.degree || '',
+            field: data.education?.field || '',
+            institution: data.education?.institution || '',
+            graduationYear: data.education?.graduationYear || '',
+          },
+          employment: {
+            company: empData.company || empData.institution || '',
+            jobTitle: empData.jobTitle || empData.role || '',
+            experience: empData.experience || data.experience || '',
+            startDate: empData.startDate || '',
+            endDate: empData.endDate || '',
+          },
+          skills: {
+            technicalSkills: rawSkills,
+            otherSkills: data.skills?.otherSkills || [],
+          },
+          languages: rawLangs,
+        });
       }
-    }).catch(() => {});
+      setLoading(false);
+    }).catch(err => {
+      console.warn('Profile fetch error:', err);
+      setError(err?.response?.data?.message || 'Could not load applicant profile from database.');
+      setLoading(false);
+    });
+  };
+
+  useEffect(() => {
+    fetchProfile(applicantId);
 
     const handleProfileUpdate = (e) => {
       const data = e.detail?.profile || e.detail;
       if (data) {
+        const personalData = data.personal || data.additionalInfo?.personal || {};
+        const empData = data.employment || (Array.isArray(data.workExperience) ? data.workExperience[0] : {}) || {};
+        const rawSkills = data.skills?.technicalSkills || (Array.isArray(data.skills) ? data.skills : null);
+        const rawLangs = Array.isArray(data.languages) ? data.languages.map(l => ({
+          language: l.language || l.name || '',
+          proficiency: l.proficiency || l.level || 'Documented'
+        })) : null;
+
         setProfile(prev => ({
-          personal: { ...prev.personal, ...(data.personal || {}) },
+          personal: { ...prev.personal, ...personalData },
           education: { ...prev.education, ...(data.education || {}) },
-          employment: { ...prev.employment, ...(data.employment || {}) },
+          employment: { ...prev.employment, ...empData },
           skills: {
-            technicalSkills: data.skills?.technicalSkills || (Array.isArray(data.skills) ? data.skills : prev.skills.technicalSkills),
+            technicalSkills: rawSkills || prev.skills.technicalSkills,
             otherSkills: data.skills?.otherSkills || prev.skills.otherSkills,
           },
-          languages: data.languages || prev.languages,
+          languages: rawLangs || prev.languages,
         }));
       }
     };
@@ -742,6 +786,16 @@ function ProfileView() {
 
   return (
     <div className="card dashboard-card-enhanced" style={{ padding: '32px' }}>
+      {error && (
+        <div style={{ background: '#fef2f2', border: '1px solid #fecaca', color: '#b91c1c', padding: '12px 16px', borderRadius: '10px', marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <strong>Error loading profile:</strong> {error}
+          </div>
+          <button onClick={() => fetchProfile(applicantId)} style={{ background: '#dc2626', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontWeight: '600' }}>
+            Retry
+          </button>
+        </div>
+      )}
       <div className="section-title" style={{ marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
           <h2>Applicant Profile</h2>
@@ -941,20 +995,46 @@ function EligibilityView() {
 }
 
 
-function RequirementsView({ applicantId = '123' }) {
+function RequirementsView({ applicantId }) {
   const [reqData, setReqData] = useState({
     country: null,
     role: null,
     company: null,
     missingInformation: ['role'],
   });
+  const [savedReqs, setSavedReqs] = useState([]);
+  const [loadingInitial, setLoadingInitial] = useState(true);
 
-  useEffect(() => {
-    chatApi.getRequirements(applicantId).then((data) => {
+  // Requirements AI Assistant State
+  const [goalInput, setGoalInput] = useState('');
+  const [isAnalyzingGoal, setIsAnalyzingGoal] = useState(false);
+  const [goalError, setGoalError] = useState(null);
+  const [ambiguityQuestion, setAmbiguityQuestion] = useState(null);
+  const [proposedRequirements, setProposedRequirements] = useState([]);
+  const [proposedMeta, setProposedMeta] = useState(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveSuccessMsg, setSaveSuccessMsg] = useState(null);
+
+  const fetchActiveRequirements = async () => {
+    try {
+      const data = await chatApi.getRequirements(applicantId);
       if (data && (data.country || data.role || data.company)) {
         setReqData(prev => ({ ...prev, ...data }));
       }
-    }).catch(() => {});
+    } catch {}
+
+    try {
+      const defs = await qualificationApi.getQualification();
+      const items = defs?.requirements || defs?.data?.requirements || [];
+      if (Array.isArray(items) && items.length > 0) {
+        setSavedReqs(items);
+      }
+    } catch {}
+    setLoadingInitial(false);
+  };
+
+  useEffect(() => {
+    fetchActiveRequirements();
 
     const handleUpdate = (e) => {
       if (e.detail?.requirement) {
@@ -969,18 +1049,388 @@ function RequirementsView({ applicantId = '123' }) {
     return () => window.removeEventListener('requirement-updated', handleUpdate);
   }, [applicantId]);
 
+  const handleGenerateRequirements = async (e, customGoal = null) => {
+    if (e && e.preventDefault) e.preventDefault();
+    const targetGoal = (customGoal || goalInput).trim();
+    if (!targetGoal) {
+      setGoalError('Please enter what career goal or role you want to achieve.');
+      return;
+    }
+
+    setIsAnalyzingGoal(true);
+    setGoalError(null);
+    setAmbiguityQuestion(null);
+    setSaveSuccessMsg(null);
+
+    try {
+      const res = await chatApi.generateRequirements(applicantId, targetGoal);
+      const data = res?.data || res;
+
+      if (data.isAmbiguous && data.followUpQuestion) {
+        setAmbiguityQuestion(data.followUpQuestion);
+        setProposedRequirements([]);
+        setProposedMeta(null);
+      } else if (Array.isArray(data.proposedRequirements) && data.proposedRequirements.length > 0) {
+        setProposedRequirements(
+          data.proposedRequirements.map(r => ({
+            ...r,
+            selected: true,
+          }))
+        );
+        setProposedMeta({
+          role: data.role || targetGoal,
+          country: data.country || 'Germany',
+          company: data.company || null,
+          summary: data.summary || `Identified requirements for ${data.role || targetGoal}.`,
+        });
+        setAmbiguityQuestion(null);
+      } else {
+        setGoalError('Could not identify specific requirements. Please specify your target role in Germany.');
+      }
+    } catch (err) {
+      console.warn('Requirement generation error:', err);
+      setGoalError('Unable to generate requirements right now. Please try again.');
+    } finally {
+      setIsAnalyzingGoal(false);
+    }
+  };
+
+  const handleToggleRequirement = (index) => {
+    setProposedRequirements(prev =>
+      prev.map((item, i) => (i === index ? { ...item, selected: !item.selected } : item))
+    );
+  };
+
+  const handleUpdateRequirementField = (index, field, value) => {
+    setProposedRequirements(prev =>
+      prev.map((item, i) => (i === index ? { ...item, [field]: value } : item))
+    );
+  };
+
+  const handleRemoveRequirement = (index) => {
+    setProposedRequirements(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const handleAddCustomRequirement = () => {
+    setProposedRequirements(prev => [
+      ...prev,
+      {
+        id: `req-user-${Date.now()}`,
+        title: 'Custom Professional Requirement',
+        description: 'Specify details for this role requirement in Germany.',
+        category: 'DOCUMENT',
+        status: 'REQUIRED',
+        selected: true,
+      },
+    ]);
+  };
+
+  const handleConfirmAndSave = async () => {
+    const activeSelected = proposedRequirements.filter(r => r.selected);
+    if (activeSelected.length === 0) {
+      setGoalError('Please select at least one requirement to save.');
+      return;
+    }
+
+    setIsSaving(true);
+    setGoalError(null);
+
+    try {
+      const payload = {
+        requirements: activeSelected,
+        role: proposedMeta?.role || reqData.role || 'Software Engineer',
+        country: proposedMeta?.country || reqData.country || 'Germany',
+        company: proposedMeta?.company || reqData.company || null,
+      };
+
+      const res = await chatApi.saveRequirements(applicantId, payload);
+      const savedResult = res?.data || res;
+
+      // Update local state immediately
+      setReqData(prev => ({
+        ...prev,
+        role: payload.role,
+        country: payload.country,
+        company: payload.company,
+        missingInformation: [],
+      }));
+
+      const newSavedList = savedResult?.requirements || activeSelected;
+      setSavedReqs(newSavedList);
+
+      setSaveSuccessMsg(`✓ Successfully saved ${activeSelected.length} pathway requirements to your profile.`);
+      setProposedRequirements([]);
+      setProposedMeta(null);
+      setGoalInput('');
+
+      // Dispatch event to notify journey and chat
+      window.dispatchEvent(
+        new CustomEvent('requirement-updated', {
+          detail: {
+            requirement: {
+              role: payload.role,
+              country: payload.country,
+              company: payload.company,
+            },
+            requirements: newSavedList,
+          },
+        })
+      );
+    } catch (err) {
+      console.error('Failed to save requirements:', err);
+      setGoalError('Failed to save requirements to your profile. Please try again.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   return (
     <div className="dashboard">
       <div className="dashboard-card-enhanced">
         <div className="section-title" style={{ marginBottom: '24px' }}>
           <h2>Pathway Requirements</h2>
-          <p>AI-extracted employment requirement for your journey to Germany.</p>
+          <p>AI-assisted employment and academic requirement builder for your journey to Germany.</p>
         </div>
 
+        {/* Small AI Assistant in Requirements Dashboard */}
+        <div className="req-assistant-card">
+          <div className="req-assistant-header">
+            <span className="req-assistant-badge">
+              <Icon name="sparkles" size={14} /> PixelMind Career AI
+            </span>
+          </div>
+
+          <p className="req-assistant-prompt">
+            "What are your career goals? Tell me what you want to achieve, and I'll help identify the requirements."
+          </p>
+
+          <form onSubmit={handleGenerateRequirements} className="req-input-form">
+            <input
+              type="text"
+              value={goalInput}
+              onChange={e => setGoalInput(e.target.value)}
+              placeholder="e.g. I want to join BMW in Germany, Nurse in Berlin, or Cloud Solutions Architect"
+              className="req-input-field"
+              disabled={isAnalyzingGoal}
+            />
+            <button
+              type="submit"
+              disabled={isAnalyzingGoal || !goalInput.trim()}
+              className="req-submit-btn"
+            >
+              {isAnalyzingGoal ? (
+                <>Analyzing Goal...</>
+              ) : (
+                <>
+                  <Icon name="sparkles" size={16} /> Identify Requirements
+                </>
+              )}
+            </button>
+          </form>
+
+          {/* Quick Preset Goal Chips */}
+          <div className="req-chips">
+            <span className="req-chip-label">Quick suggestions:</span>
+            <button
+              type="button"
+              className="req-chip-btn"
+              onClick={() => {
+                setGoalInput('I want to join BMW as a Software Engineer in Germany');
+                handleGenerateRequirements(null, 'I want to join BMW as a Software Engineer in Germany');
+              }}
+            >
+              🚗 BMW Software Engineer
+            </button>
+            <button
+              type="button"
+              className="req-chip-btn"
+              onClick={() => {
+                setGoalInput('I want to work as a Registered Nurse in Germany');
+                handleGenerateRequirements(null, 'I want to work as a Registered Nurse in Germany');
+              }}
+            >
+              🏥 Registered Nurse
+            </button>
+            <button
+              type="button"
+              className="req-chip-btn"
+              onClick={() => {
+                setGoalInput('I want to work as a Cloud Solutions Architect in Berlin');
+                handleGenerateRequirements(null, 'I want to work as a Cloud Solutions Architect in Berlin');
+              }}
+            >
+              ☁️ Cloud Solutions Architect
+            </button>
+            <button
+              type="button"
+              className="req-chip-btn"
+              onClick={() => {
+                setGoalInput('I want to join BMW in Germany');
+                handleGenerateRequirements(null, 'I want to join BMW in Germany');
+              }}
+            >
+              🏢 BMW (Ask Role)
+            </button>
+          </div>
+
+          {/* Ambiguity Follow-up Box */}
+          {ambiguityQuestion && (
+            <div className="req-followup-box">
+              <div className="req-followup-text">
+                💡 <b>Follow-up Question:</b> {ambiguityQuestion}
+              </div>
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  className="req-chip-btn"
+                  onClick={() => {
+                    const ans = `${goalInput} as a Software Engineer`;
+                    setGoalInput(ans);
+                    handleGenerateRequirements(null, ans);
+                  }}
+                >
+                  Software Engineer
+                </button>
+                <button
+                  type="button"
+                  className="req-chip-btn"
+                  onClick={() => {
+                    const ans = `${goalInput} as a Mechanical Engineer`;
+                    setGoalInput(ans);
+                    handleGenerateRequirements(null, ans);
+                  }}
+                >
+                  Mechanical Engineer
+                </button>
+                <button
+                  type="button"
+                  className="req-chip-btn"
+                  onClick={() => {
+                    const ans = `${goalInput} as a Data Scientist`;
+                    setGoalInput(ans);
+                    handleGenerateRequirements(null, ans);
+                  }}
+                >
+                  Data Scientist
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Error Message */}
+          {goalError && (
+            <div style={{ marginTop: '12px', color: '#fca5a5', fontSize: '13px', fontWeight: 600 }}>
+              ⚠️ {goalError}
+            </div>
+          )}
+
+          {/* Success Message */}
+          {saveSuccessMsg && (
+            <div style={{ marginTop: '12px', color: '#86efac', fontSize: '13px', fontWeight: 600 }}>
+              {saveSuccessMsg}
+            </div>
+          )}
+        </div>
+
+        {/* Proposed Requirements Review Panel */}
+        {proposedRequirements.length > 0 && (
+          <div className="proposed-review-panel">
+            <div className="proposed-review-header">
+              <div>
+                <span style={{ fontSize: '12px', fontWeight: 800, color: '#2563eb', background: '#dbeafe', padding: '3px 8px', borderRadius: '10px' }}>
+                  PROPOSED REQUIREMENTS REVIEW
+                </span>
+                <h3 style={{ margin: '6px 0 2px', color: '#0f172a', fontSize: '18px' }}>
+                  Target: {proposedMeta?.role} {proposedMeta?.country ? `in ${proposedMeta?.country}` : ''}
+                  {proposedMeta?.company ? ` (${proposedMeta?.company})` : ''}
+                </h3>
+                <p style={{ margin: 0, color: '#64748b', fontSize: '13px' }}>
+                  Review, edit, or customize the requirements below before confirming to save.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setProposedRequirements([])}
+                style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: '18px' }}
+                title="Dismiss"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column' }}>
+              {proposedRequirements.map((req, idx) => (
+                <div key={req.id || idx} className={`proposed-item-row ${req.selected ? 'is-selected' : ''}`}>
+                  <input
+                    type="checkbox"
+                    checked={req.selected}
+                    onChange={() => handleToggleRequirement(idx)}
+                    className="proposed-checkbox"
+                    title="Include requirement"
+                  />
+                  <div className="proposed-content">
+                    <input
+                      type="text"
+                      value={req.title}
+                      onChange={e => handleUpdateRequirementField(idx, 'title', e.target.value)}
+                      className="proposed-title-input"
+                    />
+                    <input
+                      type="text"
+                      value={req.description}
+                      onChange={e => handleUpdateRequirementField(idx, 'description', e.target.value)}
+                      className="proposed-desc-input"
+                    />
+                    <div className="proposed-meta-badges">
+                      <span className="badge-cat">{req.category || 'GENERAL'}</span>
+                      <span className={`badge-stat ${req.status === 'REQUIRED' ? 'required' : ''}`}>
+                        {req.status || 'REQUIRED'}
+                      </span>
+                      <span style={{ fontSize: '11px', color: '#94a3b8', marginLeft: 'auto' }}>
+                        AI Generated Suggestion
+                      </span>
+                    </div>
+                  </div>
+                  <div className="proposed-item-actions">
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveRequirement(idx)}
+                      className="btn-remove-req"
+                      title="Remove requirement"
+                    >
+                      <Icon name="trash" size={15} />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="proposed-actions-bar">
+              <button
+                type="button"
+                onClick={handleAddCustomRequirement}
+                className="btn-add-custom-req"
+              >
+                + Add Custom Requirement
+              </button>
+
+              <button
+                type="button"
+                onClick={handleConfirmAndSave}
+                disabled={isSaving || proposedRequirements.filter(r => r.selected).length === 0}
+                className="btn-confirm-save-req"
+              >
+                {isSaving ? 'Saving to Profile...' : '✓ Confirm & Save Requirements'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Current Active Pathway Banner */}
         <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '12px', padding: '20px', marginBottom: '28px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
             <span style={{ fontSize: '13px', fontWeight: '800', color: '#1e40af', background: '#dbeafe', padding: '3px 10px', borderRadius: '12px' }}>
-              EMPLOYMENT PATHWAY
+              ACTIVE PATHWAY
             </span>
             <h3 style={{ margin: '8px 0 4px', color: '#1e3a8a', fontSize: '20px' }}>
               {reqData.role ? reqData.role : 'Target Role Pending'} {reqData.country ? `in ${reqData.country}` : ''}
@@ -988,8 +1438,8 @@ function RequirementsView({ applicantId = '123' }) {
             </h3>
             <p style={{ margin: 0, color: '#3b82f6', fontSize: '15px' }}>
               {reqData.role && reqData.country
-                ? 'Requirement sufficiently defined. Ready for profile & qualification.'
-                : 'Chat with Educaro AI to specify missing requirement details.'}
+                ? 'Pathway active. Requirements saved and synchronized with Document Verification & Eligibility.'
+                : 'Enter your career goal above to identify and save requirements.'}
             </p>
           </div>
           <div style={{ textAlign: 'right' }}>
@@ -1002,63 +1452,89 @@ function RequirementsView({ applicantId = '123' }) {
               background: reqData.role && reqData.country ? '#dcfce7' : '#fef3c7',
               color: reqData.role && reqData.country ? '#166534' : '#b45309'
             }}>
-              {reqData.role && reqData.country ? '✓ Requirements Set' : '● Action Required'}
+              {reqData.role && reqData.country ? '✓ Requirements Active' : '● Action Required'}
             </span>
           </div>
         </div>
 
+        {/* Current Saved Requirements List */}
         <div className="req-list">
-          {[
-            {
-              title: 'Destination Country',
-              value: reqData.country || 'Not specified (Required)',
-              status: reqData.country ? 'done' : 'pending',
-              desc: 'Target country for your employment journey.'
-            },
-            {
-              title: 'Target Job Role',
-              value: reqData.role || 'Not specified (Required)',
-              status: reqData.role ? 'done' : 'pending',
-              desc: 'Desired professional position or field.'
-            },
-            {
-              title: 'Target Company',
-              value: reqData.company || 'Open / Any (Optional)',
-              status: reqData.company ? 'done' : 'optional',
-              desc: 'Specific employer preference if applicable.'
-            },
-            {
-              title: 'Language & Degree Equivalency',
-              value: reqData.role ? `Standard requirements for ${reqData.role}` : 'Pending role specification',
-              status: 'info',
-              desc: 'Required certificates will be evaluated based on your target role.'
-            }
-          ].map((req, i) => (
-            <div key={i} className="req-item" style={{ background: '#f8fafc', border: '1px solid #e2e8f0' }}>
-              <div className="req-icon" style={{
-                background: req.status === 'done' ? '#dcfce7' : req.status === 'pending' ? '#fee2e2' : '#e2e8f0',
-                color: req.status === 'done' ? '#16a34a' : req.status === 'pending' ? '#dc2626' : '#64748b'
-              }}>
-                <span>{req.status === 'done' ? '✓' : i + 1}</span>
-              </div>
-              <div className="req-content">
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <h4>{req.title}</h4>
-                  <span style={{ fontSize: '13px', fontWeight: '700', color: req.status === 'done' ? '#16a34a' : req.status === 'pending' ? '#dc2626' : '#64748b' }}>
-                    {req.value}
-                  </span>
+          {(savedReqs.length > 0
+            ? savedReqs
+            : [
+                {
+                  title: 'Destination Country',
+                  value: reqData.country || 'Not specified (Required)',
+                  status: reqData.country ? 'SATISFIED' : 'MISSING',
+                  description: 'Target country for your employment or academic journey.',
+                  category: 'LOCATION',
+                },
+                {
+                  title: 'Target Job Role / Profession',
+                  value: reqData.role || 'Not specified (Required)',
+                  status: reqData.role ? 'SATISFIED' : 'MISSING',
+                  description: 'Desired professional position or field in Germany.',
+                  category: 'CAREER',
+                },
+                {
+                  title: 'Target Company / Organization',
+                  value: reqData.company || 'Open / Any (Optional)',
+                  status: reqData.company ? 'SATISFIED' : 'OPTIONAL',
+                  description: 'Specific employer preference if applicable.',
+                  category: 'EMPLOYER',
+                },
+                {
+                  title: 'Language & Degree Equivalency',
+                  value: reqData.role ? `Standard requirements for ${reqData.role}` : 'Pending role specification',
+                  status: 'INFO',
+                  description: 'Required certificates will be evaluated based on your target role.',
+                  category: 'EDUCATION',
+                },
+              ]
+          ).map((req, i) => {
+            const isDone = req.status === 'SATISFIED' || req.status === 'done';
+            const isOptional = req.status === 'OPTIONAL' || req.status === 'optional';
+            return (
+              <div key={req.id || i} className="req-item" style={{ background: '#f8fafc', border: '1px solid #e2e8f0' }}>
+                <div
+                  className="req-icon"
+                  style={{
+                    background: isDone ? '#dcfce7' : isOptional ? '#f1f5f9' : '#fee2e2',
+                    color: isDone ? '#16a34a' : isOptional ? '#64748b' : '#dc2626',
+                  }}
+                >
+                  <span>{isDone ? '✓' : i + 1}</span>
                 </div>
-                <p>{req.desc}</p>
+                <div className="req-content">
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <h4>{req.title}</h4>
+                    <span
+                      style={{
+                        fontSize: '13px',
+                        fontWeight: '700',
+                        color: isDone ? '#16a34a' : isOptional ? '#64748b' : '#dc2626',
+                      }}
+                    >
+                      {req.value || (isDone ? 'Verified / Provided' : 'Action Required')}
+                    </span>
+                  </div>
+                  <p>{req.description || req.desc}</p>
+                  {req.category && (
+                    <div style={{ marginTop: '4px' }}>
+                      <span className="badge-cat" style={{ fontSize: '10px' }}>{req.category}</span>
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     </div>
   );
 }
 
-function DocumentVerificationView({ applicantId = '123', onUpload, isUploading, uploadedFiles = [] }) {
+function DocumentVerificationView({ applicantId, onUpload, isUploading, uploadedFiles = [] }) {
   const [documents, setDocuments] = useState([]);
   const [selectedDocId, setSelectedDocId] = useState(null);
   const [processingId, setProcessingId] = useState(null);
@@ -1396,18 +1872,86 @@ function DocumentVerificationView({ applicantId = '123', onUpload, isUploading, 
   );
 }
 
-function ChatPanel({ applicantId = '123', onClose }) {
+function FormattedMessageText({ text }) {
+  if (!text) return null;
+  const lines = text.split('\n');
+
+  return (
+    <div className="formatted-msg-body">
+      {lines.map((line, idx) => {
+        const trimmed = line.trim();
+        if (!trimmed) {
+          return <div key={idx} className="msg-spacer" />;
+        }
+
+        const isBullet = trimmed.startsWith('•') || trimmed.startsWith('-') || trimmed.startsWith('*');
+        const content = isBullet ? trimmed.replace(/^[•\-\*]\s*/, '') : trimmed;
+
+        const renderTokens = (str) => {
+          const parts = str.split(/(\*\*[^*]+\*\*)/g);
+          return parts.map((part, pIdx) => {
+            if (part.startsWith('**') && part.endsWith('**')) {
+              return <strong key={pIdx}>{part.slice(2, -2)}</strong>;
+            }
+
+            const words = part.split(/(\b(?:VERIFIED|CONFLICT|PENDING|PROCESSED|UPLOADED|QUALIFIED|IN_PROGRESS|SATISFIED|MISMATCH)\b)/g);
+            return words.map((w, wIdx) => {
+              if (w === 'VERIFIED' || w === 'QUALIFIED' || w === 'SATISFIED') {
+                return <span key={wIdx} className="chat-badge badge-verified">{w}</span>;
+              }
+              if (w === 'CONFLICT' || w === 'MISMATCH') {
+                return <span key={wIdx} className="chat-badge badge-conflict">{w}</span>;
+              }
+              if (w === 'PENDING' || w === 'IN_PROGRESS' || w === 'PROCESSED' || w === 'UPLOADED') {
+                return <span key={wIdx} className="chat-badge badge-pending">{w}</span>;
+              }
+              return w;
+            });
+          });
+        };
+
+        if (isBullet) {
+          return (
+            <div key={idx} className="msg-bullet-row">
+              <span className="msg-bullet-dot">•</span>
+              <div className="msg-bullet-text">{renderTokens(content)}</div>
+            </div>
+          );
+        }
+
+        return (
+          <p key={idx} className="msg-line">
+            {renderTokens(trimmed)}
+          </p>
+        );
+      })}
+    </div>
+  );
+}
+
+function ChatPanel({ applicantId, onClose, isExpanded = false, onToggleExpand = null, isEmbeddedView = false }) {
   const { data: history, execute: loadHistory } = useApi(chatApi.getHistory);
   const { execute: sendMsgApi } = useApi(chatApi.sendMessage);
   
-  const [messages, setMessages] = useState([{role:'ai', text:'Hi Rahul! I checked your application. Your German language certificate is still pending.'}]);
+  const initialWelcome = 'Hi! I am your PixelMind AI assistant. I have live access to your application, uploaded documents, qualification assessment, and journey records. Ask me anything about your documents, requirements, next steps, or request profile updates anytime.';
+
+  const [messages, setMessages] = useState([
+    {
+      role: 'ai', 
+      text: initialWelcome,
+    }
+  ]);
   const [input, setInput] = useState('');
   const [isRecording, setIsRecording] = useState(false);
   const [isVoiceProcessing, setIsVoiceProcessing] = useState(false);
+  const [isConfirmingClear, setIsConfirmingClear] = useState(false);
+  const [isClearing, setIsClearing] = useState(false);
   
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
   const mediaStreamRef = useRef(null);
+  const messagesEndRef = useRef(null);
+  const textareaRef = useRef(null);
   
   useEffect(() => {
     loadHistory(applicantId).then(data => {
@@ -1421,11 +1965,45 @@ function ChatPanel({ applicantId = '123', onClose }) {
     };
   }, [applicantId, loadHistory]);
 
+  const handleClearChat = async () => {
+    setIsClearing(true);
+    try {
+      await chatApi.clearHistory(applicantId);
+    } catch (err) {
+      console.warn('Backend clear history note:', err);
+    } finally {
+      setMessages([{ role: 'ai', text: initialWelcome }]);
+      setInput('');
+      setIsRecording(false);
+      setIsVoiceProcessing(false);
+      setIsClearing(false);
+      setIsConfirmingClear(false);
+    }
+  };
+
+  // Auto-scroll on new message
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages, isVoiceProcessing]);
+
+  // Auto-resize textarea height
+  useEffect(() => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+      const scrollHeight = textareaRef.current.scrollHeight;
+      textareaRef.current.style.height = `${Math.min(Math.max(scrollHeight, 44), 160)}px`;
+    }
+  }, [input]);
+
   const send = async () => { 
     if (!input.trim()) return; 
     const t = input.trim(); 
     setMessages(m => [...m, {role:'user',text:t}]); 
     setInput('');
+    if (textareaRef.current) {
+      textareaRef.current.style.height = '44px';
+    }
+
     try {
       const response = await sendMsgApi(applicantId, t);
       if (response && (response.message || response.reply)) {
@@ -1442,6 +2020,13 @@ function ChatPanel({ applicantId = '123', onClose }) {
     } catch (e) {
       const errMsg = e?.response?.data?.message || 'Sorry, I am having trouble connecting right now.';
       setMessages(m => [...m, {role:'ai', text: errMsg}]);
+    }
+  };
+
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      send();
     }
   };
 
@@ -1589,82 +2174,169 @@ function ChatPanel({ applicantId = '123', onClose }) {
   };
   
   return (
-    <section className="chat-panel card" id="ai-assistant" style={{ height: '100%', margin: 0, border: 'none' }}>
+    <section 
+      className={`chat-panel card ${isExpanded ? 'is-expanded-mode' : ''} ${isEmbeddedView ? 'is-embedded-view' : ''}`} 
+      id="ai-assistant"
+    >
       <div className="chat-title">
-        <div className="robot"><Icon name="bot" size={21}/></div>
-        <div>
-          <b>Chat with PixelMind AI</b>
-          <span><i/> {isRecording ? '🎙️ Listening...' : isVoiceProcessing ? '⚡ Processing speech...' : 'Online'}</span>
+        <div className="robot"><Icon name="bot" size={22}/></div>
+        <div className="chat-header-info">
+          <b>PixelMind AI Assistant</b>
+          <span>
+            <i className={isRecording ? 'recording-dot' : ''}/> 
+            {isRecording ? '🎙️ Listening to your voice...' : isVoiceProcessing ? '⚡ Analyzing & processing speech...' : 'Live Connected to Database'}
+          </span>
         </div>
-        {onClose && <button onClick={onClose}><Icon name="x" size={16}/></button>}
+
+        <div className="chat-header-actions">
+          <button 
+            type="button" 
+            className="chat-action-btn chat-clear-btn"
+            onClick={() => setIsConfirmingClear(true)} 
+            title="Clear chat"
+            aria-label="Clear chat"
+          >
+            <Icon name="trash" size={16}/>
+          </button>
+          {onToggleExpand && (
+            <button 
+              type="button" 
+              className="chat-action-btn"
+              onClick={onToggleExpand} 
+              title={isExpanded ? "Collapse to compact view" : "Expand to wide workspace"}
+            >
+              <Icon name={isExpanded ? "minimize" : "maximize"} size={17}/>
+            </button>
+          )}
+          {onClose && (
+            <button 
+              type="button" 
+              className="chat-action-btn close-btn"
+              onClick={onClose} 
+              title="Close chat"
+            >
+              <Icon name="x" size={17}/>
+            </button>
+          )}
+        </div>
       </div>
-      <div className="messages">
-        {messages.map((m,i)=>(
+
+      {/* Clear Chat Confirmation Modal */}
+      {isConfirmingClear && (
+        <div className="chat-confirm-overlay">
+          <div className="chat-confirm-box" role="dialog" aria-modal="true">
+            <div className="chat-confirm-icon">
+              <Icon name="trash" size={24}/>
+            </div>
+            <h3>Clear conversation?</h3>
+            <p>Clear this conversation? This action cannot be undone.</p>
+            <div className="chat-confirm-actions">
+              <button 
+                type="button" 
+                className="btn-cancel-clear"
+                onClick={() => setIsConfirmingClear(false)}
+                disabled={isClearing}
+              >
+                Cancel
+              </button>
+              <button 
+                type="button" 
+                className="btn-confirm-clear"
+                onClick={handleClearChat}
+                disabled={isClearing}
+              >
+                {isClearing ? 'Clearing...' : 'Clear chat'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="messages" id="chat-messages-scroll">
+        {messages.map((m, i) => (
           <div key={i} className={`bubble ${m.role}`}>
-            <div>{m.text}</div>
+            <div className="bubble-header">
+              <span className="bubble-sender">{m.role === 'ai' ? '🤖 PixelMind AI' : '👤 You'}</span>
+            </div>
+            <FormattedMessageText text={m.text} />
             {m.role === 'ai' && m.audioBase64 && (
-              <div style={{ marginTop: '6px' }}>
+              <div className="voice-replay-wrap">
                 <button
                   type="button"
                   onClick={() => playVoiceAudio(m.audioBase64)}
                   title="Replay spoken response"
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '4px',
-                    padding: '3px 8px',
-                    fontSize: '11px',
-                    fontWeight: 600,
-                    borderRadius: '12px',
-                    border: '1px solid #cbd5e1',
-                    background: '#f8fafc',
-                    color: '#2563eb',
-                    cursor: 'pointer',
-                    transition: 'all 0.15s ease',
-                  }}
+                  className="voice-replay-btn"
                 >
-                  <Icon name="volume" size={12}/> Play Voice
+                  <Icon name="volume" size={14}/> Listen to Voice
                 </button>
               </div>
             )}
-            {m.role==='ai' && i===0 ? <time>10:24 AM</time> : null}
+            {m.role === 'ai' && i === 0 ? <time>Just now</time> : null}
           </div>
         ))}
         {isVoiceProcessing && (
-          <div className="bubble ai" style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#64748b' }}>
-            <span>Transcribing & thinking with PixelMind AI...</span>
+          <div className="bubble ai typing-indicator-bubble">
+            <div className="typing-dots">
+              <span />
+              <span />
+              <span />
+            </div>
+            <span style={{ fontSize: '14px', color: '#64748b' }}>PixelMind AI is reasoning & retrieving your data...</span>
           </div>
         )}
+        <div ref={messagesEndRef} />
       </div>
-      <div className="quick">
-        <button onClick={()=>setInput('What is missing?')}>What is missing?</button>
-        <button onClick={()=>setInput('Am I qualified?')}>Am I qualified?</button>
-        <button onClick={()=>setInput('What should I do next?')}>What should I do next?</button>
+
+      <div className="quick-suggestions-wrap">
+        <div className="quick-suggestions-label">Suggested prompts:</div>
+        <div className="quick">
+          <button type="button" onClick={() => setInput('Which documents have I uploaded?')}>📄 Which documents have I uploaded?</button>
+          <button type="button" onClick={() => setInput('Which documents are missing?')}>⚠️ Which documents are missing?</button>
+          <button type="button" onClick={() => setInput('Why is my language certificate pending?')}>🔍 Why is my document pending?</button>
+          <button type="button" onClick={() => setInput('What is my current eligibility?')}>🎯 What is my current eligibility?</button>
+          <button type="button" onClick={() => setInput('Change my name to Rahul Sharma')}>✏️ Update my profile name</button>
+        </div>
       </div>
+
       <div className="composer">
-        <button title="Attach document"><Icon name="paperclip" size={18}/></button>
-        <input
-          value={input}
-          onChange={e=>setInput(e.target.value)}
-          onKeyDown={e=>e.key==='Enter'&&send()}
-          placeholder={isRecording ? "Listening... Click mic to finish speaking" : "Ask anything or tap mic to speak..."}
-        />
-        <button
-          className={`voice ${isRecording ? 'recording' : ''} ${isVoiceProcessing ? 'processing' : ''}`}
-          onClick={toggleVoice}
-          title={isRecording ? "Stop recording and send" : "Speak with PixelMind AI"}
-        >
-          <Icon name="mic" size={17}/>
+        <button type="button" className="composer-btn" title="Attach document">
+          <Icon name="paperclip" size={18}/>
         </button>
-        <button className="send" onClick={send} title="Send message">
-          <Icon name="send" size={17}/>
-        </button>
+        <div className="composer-input-wrapper">
+          <textarea
+            ref={textareaRef}
+            rows={1}
+            value={input}
+            onChange={e => setInput(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder={isRecording ? "Listening... Click mic button to stop and send" : "Ask anything about your documents, eligibility, or type an update... (Shift+Enter for new line)"}
+          />
+        </div>
+        <div className="composer-actions">
+          <button
+            type="button"
+            className={`voice ${isRecording ? 'recording' : ''} ${isVoiceProcessing ? 'processing' : ''}`}
+            onClick={toggleVoice}
+            title={isRecording ? "Stop recording and send" : "Speak with PixelMind AI (ElevenLabs Voice)"}
+          >
+            <Icon name="mic" size={18}/>
+          </button>
+          <button 
+            type="button" 
+            className="send" 
+            onClick={send} 
+            disabled={!input.trim()}
+            title="Send message (Enter)"
+          >
+            <Icon name="send" size={18}/>
+          </button>
+        </div>
       </div>
     </section>
   );
 }
 
-function RightRail({ onUpload, isUploading, applicantId = '123' }) { 
+function RightRail({ onUpload, isUploading, applicantId }) { 
   return (
     <aside className="right-rail">
       <ProgressCard/>
@@ -2505,7 +3177,7 @@ function SettingsTab() {
   );
 }
 
-function NextActionsDashboard({ applicantId = '123', onUpload, isUploading }) {
+function NextActionsDashboard({ applicantId, onUpload, isUploading }) {
   const [actionData, setActionData] = useState(null);
 
   const fetchAction = useCallback(() => {
@@ -2610,6 +3282,7 @@ function App() {
   const [view, setView] = useState('globe');
   const inputRef = useRef(null);
   const [isChatOpen, setIsChatOpen] = useState(false);
+  const [isChatExpanded, setIsChatExpanded] = useState(false);
   
   const { execute: uploadDoc } = useApi(documentApi.uploadDocument);
   
@@ -2703,7 +3376,7 @@ function App() {
       case 'ausbildung':
         return <AusbildungProgramTab onBack={() => setActive('journey')} />;
       case 'profile':
-        return <div className="dashboard"><ProfileView /></div>;
+        return <div className="dashboard"><ProfileView applicantId={applicantId} /></div>;
       case 'documents':
         return (
           <DocumentVerificationView
@@ -2719,7 +3392,11 @@ function App() {
         return <NextActionsDashboard applicantId={applicantId} onUpload={handleUpload} isUploading={isUploading} />;
       case 'assistant':
       case 'messages':
-        return <div className="dashboard"><ChatPanel applicantId={applicantId} /></div>;
+        return (
+          <div className="dashboard ai-assistant-workspace">
+            <ChatPanel applicantId={applicantId} isEmbeddedView={true} />
+          </div>
+        );
       case 'consultant':
         return (
           <div className="dashboard">
@@ -2797,17 +3474,30 @@ function App() {
         </main>
       </div>
       <input ref={inputRef} className="hidden-file" type="file" accept=".pdf,.jpg,.jpeg,.png" onChange={handleFile} />
+      
+      {isChatExpanded && isChatOpen && (
+        <div 
+          className="chat-popover-backdrop"
+          onClick={() => setIsChatExpanded(false)}
+        />
+      )}
+
       <button 
         className="floating-chatbot-icon" 
         onClick={() => setIsChatOpen(!isChatOpen)}
-        title={isChatOpen ? "Close AI Chat" : "Chat with Educaro AI"}
+        title={isChatOpen ? "Close AI Chat" : "Chat with PixelMind AI"}
       >
         <Icon name={isChatOpen ? "x" : "bot"} size={28} />
       </button>
 
       {isChatOpen && (
-        <div className="chat-popover" style={{ position: 'fixed', bottom: '100px', right: '24px', width: '380px', height: '600px', maxHeight: 'calc(100vh - 120px)', zIndex: 1000, boxShadow: '0 12px 48px rgba(0,0,0,0.15)', borderRadius: '16px', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-          <ChatPanel applicantId={applicantId} onClose={() => setIsChatOpen(false)} />
+        <div className={`chat-popover ${isChatExpanded ? 'is-expanded' : ''}`}>
+          <ChatPanel 
+            applicantId={applicantId} 
+            onClose={() => setIsChatOpen(false)}
+            isExpanded={isChatExpanded}
+            onToggleExpand={() => setIsChatExpanded(!isChatExpanded)}
+          />
         </div>
       )}
     </div>

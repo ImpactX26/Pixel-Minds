@@ -307,15 +307,18 @@ Respond with ONLY valid JSON:`;
 
     // 1. Full Name
     let fullName: string | null = null;
-    const nameMatch = text.match(/(?:Name|Applicant|Candidate|Holder)\s*[:\-]?\s*([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)/);
+    const nameMatch = text.match(/(?:Name|Applicant|Candidate|Holder)\s*[:\-]?\s*([A-Z][a-z]+(?:[ \t]+[A-Z][a-z]+)+)/);
     if (nameMatch) {
-      fullName = nameMatch[1].trim();
+      fullName = nameMatch[1].split(/[\r\n]/)[0].trim();
     } else if (text.includes('Applicant A')) {
       fullName = 'Applicant A';
     } else if (text.includes('Applicant B')) {
       fullName = 'Applicant B';
     } else if (text.includes('Rahul Sharma')) {
       fullName = 'Rahul Sharma';
+    }
+    if (fullName) {
+      fullName = fullName.replace(/\s+(?:Student|Candidate|Applicant|ID|Roll|DOB)\b.*/i, '').trim();
     }
 
     // 2. Degree

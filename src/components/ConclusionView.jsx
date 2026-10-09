@@ -25,7 +25,7 @@ const Icon = ({ name, size = 20, stroke = 2, className = '' }) => {
   );
 };
 
-export default function ConclusionView({ applicantId = '123', onNavigate }) {
+export default function ConclusionView({ applicantId, onNavigate }) {
   const [report, setReport] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [copied, setCopied] = useState(false);
