@@ -93,6 +93,44 @@ export class DocumentExtractionClient {
     const docType = this.normalizeDocumentType(request.documentType, request.fileName);
     const content = (request.rawText || request.fileName || '').trim();
 
+    const serviceUrl = this.configService.get<string>('DOCUMENT_EXTRACTION_SERVICE_URL');
+    if (serviceUrl) {
+      try {
+        const targetUrl = new URL('api/v1/document-extraction/extract', serviceUrl.endsWith('/') ? serviceUrl : `${serviceUrl}/`).toString();
+        this.logger.log(`Invoking internal Document Extraction Service at "${targetUrl}"`);
+        const res = await fetch(targetUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            documentId: request.documentId,
+            documentUrl: request.documentUrl,
+            documentType: docType,
+            fileName: request.fileName,
+            rawText: content,
+          }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.extractedData) {
+            return {
+              documentId: request.documentId,
+              documentType: docType,
+              status: 'processed',
+              extractedData: data.extractedData,
+              confidence: data.confidence || 0.9,
+              metadata: {
+                extractedBy: 'Document-Extraction-Service',
+                timestamp: new Date().toISOString(),
+                ...data.metadata,
+              },
+            };
+          }
+        }
+      } catch (serviceErr: any) {
+        this.logger.warn(`Document Extraction Service call notice: ${serviceErr.message}`);
+      }
+    }
+
     const apiKey = this.configService.get<string>('GEMINI_API_KEY');
     if (apiKey && content) {
       try {

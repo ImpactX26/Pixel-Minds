@@ -84,8 +84,10 @@ async function bootstrap() {
   logger.log(`====================================================`);
 }
 
-bootstrap().catch((err) => {
-  const logger = new Logger('BootstrapError');
-  logger.error('Failed to bootstrap Educaro backend application', err);
-  process.exit(1);
-});
+if (!process.env.VERCEL) {
+  bootstrap().catch((err) => {
+    const logger = new Logger('BootstrapError');
+    logger.error('Failed to bootstrap Educaro backend application', err);
+    process.exit(1);
+  });
+}

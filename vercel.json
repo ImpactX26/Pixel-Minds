@@ -1,0 +1,49 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "services": {
+    "app": {
+      "root": ".",
+      "framework": "vite"
+    },
+    "backend": {
+      "root": "backend",
+      "framework": "nestjs",
+      "bindings": [
+        {
+          "type": "service",
+          "service": "document-extraction-service",
+          "format": "url",
+          "env": "DOCUMENT_EXTRACTION_SERVICE_URL"
+        }
+      ]
+    },
+    "document-extraction-service": {
+      "root": "document-extraction-service",
+      "framework": "express"
+    },
+    "telegram-test": {
+      "root": "telegram-test",
+      "framework": "express"
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/api/telegram/(.*)",
+      "destination": {
+        "service": "telegram-test"
+      }
+    },
+    {
+      "source": "/api/(.*)",
+      "destination": {
+        "service": "backend"
+      }
+    },
+    {
+      "source": "/(.*)",
+      "destination": {
+        "service": "app"
+      }
+    }
+  ]
+}
