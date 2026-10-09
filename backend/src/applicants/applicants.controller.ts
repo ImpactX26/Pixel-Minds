@@ -23,14 +23,14 @@ export class ApplicantsController {
     return this.applicantsService.create(createApplicantDto);
   }
 
-  @Get(':id')
-  async findOne(@Param('id') id: string) {
-    return this.applicantsService.findById(id);
-  }
-
   @Get('by-email/:email')
   async findByEmail(@Param('email') email: string) {
     return this.applicantsService.findByEmail(email);
+  }
+
+  @Get(':id')
+  async findOne(@Param('id') id: string) {
+    return this.applicantsService.findById(id);
   }
 
   @Patch(':id')

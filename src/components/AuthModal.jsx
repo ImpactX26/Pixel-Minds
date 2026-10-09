@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { applicantApi } from '../api/applicant';
 
 export function AuthModal({ initialMode = 'login', isOpen, onClose, onSuccess }) {
@@ -13,6 +13,13 @@ export function AuthModal({ initialMode = 'login', isOpen, onClose, onSuccess })
   
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+
+  useEffect(() => {
+    if (isOpen) {
+      setMode(initialMode);
+      setError(null);
+    }
+  }, [initialMode, isOpen]);
 
   if (!isOpen) return null;
 
