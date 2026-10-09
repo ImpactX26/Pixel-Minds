@@ -17,6 +17,25 @@ import { UpdateApplicantDto } from './dto/update-applicant.dto';
 export class ApplicantsController {
   constructor(private readonly applicantsService: ApplicantsService) {}
 
+  @Post('demo-login')
+  @HttpCode(HttpStatus.OK)
+  async demoLogin(@Body() body: { username?: string; password?: string; applicantId?: string; preset?: string }) {
+    const target = body.preset || body.applicantId || body.username || 'abc';
+    const applicant = await this.applicantsService.findById(target);
+    return {
+      id: applicant.id,
+      name: applicant.name,
+      email: applicant.email,
+      phone: applicant.phone,
+      country: applicant.country,
+      goal: applicant.goal,
+      journey: applicant.journey,
+      profile: applicant.profile,
+      applicant,
+      message: 'Login successful',
+    };
+  }
+
   @Post()
   @HttpCode(HttpStatus.CREATED)
   async create(@Body() createApplicantDto: CreateApplicantDto) {

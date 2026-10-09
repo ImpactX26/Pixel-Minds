@@ -14,7 +14,9 @@ import { LlmService } from './services/llm.service';
 import { ElevenLabsService } from './services/elevenlabs.service';
 import { ConversationsService } from '../conversations/conversations.service';
 import { ChatRequestDto } from './dto/chat-request.dto';
-import { ChatResponse, AiIntent, RequirementData, ProfileData } from './interfaces/ai-chat.interface';
+import { ChatResponse, AiIntent, RequirementData, ProfileData, ApplicantContextSnapshot } from './interfaces/ai-chat.interface';
+
+import { DocumentsService } from '../documents/documents.service';
 
 import { resolveApplicantUuid } from '../common/utils/uuid.util';
 
@@ -51,45 +53,163 @@ export class AiOrchestrator {
   ) {}
 
   /**
-   * Process a user chat message through the AI Orchestrator coordination layer using Gemini LLM (Phase 1, 2 & 3).
+   * Builds the complete, real-time ApplicantContextSnapshot directly from PostgreSQL tables and domain services.
+   */
+  async getApplicantContextSnapshot(applicantId: string): Promise<ApplicantContextSnapshot> {
+    const applicantUuid = resolveApplicantUuid(applicantId);
+
+    // 1. Applicant entity
+    let applicantEntity: Applicant | null = null;
+    try {
+      applicantEntity = await this.applicantRepository.findOne({
+        where: { id: applicantUuid },
+      });
+    } catch {}
+
+    // 2. Profile & Requirements
+    const profile = await this.getProfile(applicantId);
+    const requirement = await this.getRequirement(applicantId);
+
+    const applicant = {
+      id: applicantEntity?.id || applicantUuid,
+      name: profile.personal?.fullName || applicantEntity?.name || `Applicant ${applicantId}`,
+      email: applicantEntity?.email || `applicant-${applicantId}@educaro.de`,
+      country: profile.personal?.nationality || applicantEntity?.country || 'Germany',
+      goal: applicantEntity?.goal || (requirement.role ? `${requirement.role} in ${requirement.country || 'Germany'}` : 'Career in Germany'),
+    };
+
+    // 3. Uploaded Documents
+    let documents: any[] = [];
+    try {
+      const dbDocs = await this.documentRepository.find({
+        where: { applicantId: applicantUuid },
+        order: { uploadedAt: 'DESC' },
+      });
+      const memoryDocs = DocumentsService.getInMemoryDocsForApplicant(applicantId);
+      const combinedMap = new Map<string, any>();
+
+      for (const d of [...memoryDocs, ...dbDocs]) {
+        if (!combinedMap.has(d.id)) {
+          combinedMap.set(d.id, {
+            id: d.id,
+            name: d.name,
+            type: d.type,
+            status: d.status,
+            uploadedAt: d.uploadedAt,
+            extractedFields: d.extractedData?.extractedData || {},
+            verificationResult: d.extractedData?.verificationResult || {
+              overallStatus: d.status === 'verified' ? 'VERIFIED' : d.status === 'conflict' ? 'MISMATCH' : 'PENDING',
+              clarificationRequired: d.status === 'conflict',
+              clarificationMessage: d.extractedData?.verificationResult?.clarificationMessage || null,
+              fieldMismatches: (d.extractedData?.verificationResult?.fields || []).filter((f: any) => f.status === 'MISMATCH'),
+            },
+          });
+        }
+      }
+      documents = Array.from(combinedMap.values());
+    } catch {}
+
+    // 4. Qualification & Missing Documents
+    let qualSummary: any = {
+      status: 'PENDING',
+      satisfied: 0,
+      totalRequirements: 8,
+      missingCount: 8,
+      conflicts: 0,
+      requirements: [],
+    };
+    try {
+      qualSummary = await this.qualificationService.getLatestQualification(applicantUuid);
+    } catch {
+      try {
+        qualSummary = await this.qualificationService.checkQualification(applicantUuid);
+      } catch {}
+    }
+
+    const missingDocs: string[] = [];
+    const verifiedTypes = new Set(
+      documents.filter((d) => d.status === 'verified' || d.verificationResult?.overallStatus === 'VERIFIED').map((d) => d.type)
+    );
+
+    if (!verifiedTypes.has('DEGREE_CERTIFICATE') && !documents.some((d) => d.type === 'DEGREE_CERTIFICATE')) {
+      missingDocs.push('DEGREE_CERTIFICATE');
+    }
+    if (!verifiedTypes.has('LANGUAGE_CERTIFICATE') && !documents.some((d) => d.type === 'LANGUAGE_CERTIFICATE')) {
+      missingDocs.push('GERMAN_LANGUAGE_CERTIFICATE');
+    }
+    if (!verifiedTypes.has('PASSPORT') && !documents.some((d) => d.type === 'PASSPORT')) {
+      missingDocs.push('PASSPORT');
+    }
+
+    // 5. Next Action
+    let nextAction: any = null;
+    try {
+      nextAction = await this.nextActionService.getNextAction(applicantUuid);
+    } catch {}
+
+    // 6. Journey
+    let journeyStage = 'REQUIREMENTS';
+    let journeyProgress = 20;
+    try {
+      const journey = await this.journeyRepository.findOne({ where: { applicantId: applicantUuid } });
+      if (journey) {
+        journeyStage = journey.currentStage;
+        journeyProgress = journey.progress;
+      }
+    } catch {}
+
+    // 7. CV
+    const hasCv = Boolean(profile.additionalInfo?.generatedCv || documents.some((d) => d.type === 'GENERATED_CV'));
+    const isApproved = Boolean(profile.additionalInfo?.generatedCv?.status === 'APPROVED' || documents.some((d) => d.type === 'GENERATED_CV' && d.extractedData?.status === 'APPROVED'));
+
+    return {
+      applicantId,
+      applicant,
+      requirement,
+      profile,
+      documents,
+      missingDocuments: missingDocs,
+      qualification: {
+        status: qualSummary?.status || 'PENDING',
+        satisfied: qualSummary?.satisfied || 0,
+        totalRequirements: qualSummary?.totalRequirements || 8,
+        missingCount: qualSummary?.missing || missingDocs.length,
+        conflicts: qualSummary?.conflicts || (documents.some((d) => d.status === 'conflict') ? 1 : 0),
+        requirements: qualSummary?.requirements || [],
+      },
+      nextAction: nextAction ? {
+        title: nextAction.title,
+        action: nextAction.action,
+        reason: nextAction.reason,
+        priority: nextAction.priority,
+        requirementCode: nextAction.requirementCode,
+      } : null,
+      journey: {
+        currentStage: journeyStage,
+        progress: journeyProgress,
+      },
+      cv: {
+        hasCv,
+        isApproved,
+      },
+    };
+  }
+
+  /**
+   * Process a user chat message through the AI Orchestrator coordination layer using Gemini LLM.
    */
   async processChat(dto: ChatRequestDto): Promise<ChatResponse> {
     const applicantId = dto.applicantId || 'default';
     const applicantUuid = resolveApplicantUuid(applicantId);
     const message = dto.message;
 
-    // 1. Detect deterministic intent for metadata
+    // 1. Detect intent
     const intent = this.intentDetector.detectIntent(message);
 
-    // 2. Load existing requirement & profile state
-    let currentRequirement: RequirementData = AiOrchestrator.requirementStore.get(applicantId) || {};
-    let currentProfile: ProfileData = AiOrchestrator.profileStore.get(applicantId) || {};
+    // 2. Build live ApplicantContextSnapshot from database / source of truth
+    const contextSnapshot = await this.getApplicantContextSnapshot(applicantId);
 
-    // Check database for existing applicant profile if available
-    try {
-      const applicant = await this.applicantRepository.findOne({ where: { id: applicantUuid } });
-      if (applicant) {
-        if (!currentRequirement.country && applicant.country) {
-          currentRequirement.country = applicant.country;
-        }
-        if (!currentProfile.personal?.fullName && applicant.name) {
-          currentProfile.personal = { ...(currentProfile.personal || {}), fullName: applicant.name };
-        }
-      }
-      const dbProfile = await this.profileRepository.findOne({ where: { applicantId: applicantUuid } });
-      if (dbProfile) {
-        if (!currentProfile.education && dbProfile.education) currentProfile.education = dbProfile.education;
-        if (!currentProfile.skills && dbProfile.skills) currentProfile.skills = { technicalSkills: dbProfile.skills };
-        if (!currentProfile.languages && dbProfile.languages) currentProfile.languages = dbProfile.languages;
-        if (dbProfile.additionalInfo?.personal) {
-          currentProfile.personal = { ...(currentProfile.personal || {}), ...dbProfile.additionalInfo.personal };
-        }
-      }
-    } catch {
-      // Gracefully ignore DB errors in mock/standalone mode
-    }
-
-    // 3. Load recent conversation history if available
+    // 3. Load recent conversation history
     let history: Array<{ sender: string; message: string }> = [];
     try {
       const convs = await this.conversationRepository.find({
@@ -101,101 +221,127 @@ export class AiOrchestrator {
         sender: c.sender,
         message: c.message,
       }));
-    } catch {
-      // Gracefully ignore
+    } catch {}
+
+    // Step A: Explicit Profile Update Handling
+    if (intent === 'UPDATE_PROFILE' || this.isProfileUpdateMessage(message)) {
+      const updateResult = this.llmService.fallbackExtractProfile(message, contextSnapshot.profile);
+      
+      // Persist in DB and memory
+      AiOrchestrator.profileStore.set(applicantId, updateResult.profile);
+      await this.persistApplicantProfile(applicantId, updateResult.profile);
+
+      try {
+        await this.saveConversation(applicantId, message, updateResult.message);
+      } catch {}
+
+      this.logger.log(`Explicit profile update applied for applicant ${applicantId}: ${updateResult.message}`);
+
+      return {
+        applicantId,
+        message: updateResult.message,
+        stage: 'PROFILE',
+        goalType: 'EMPLOYMENT',
+        requirement: contextSnapshot.requirement,
+        profile: updateResult.profile,
+        missingInformation: updateResult.missingInformation,
+        nextAction: updateResult.nextAction,
+        intent: 'UPDATE_PROFILE',
+      };
     }
 
-    const wasRequirementComplete = Boolean(currentRequirement.country && currentRequirement.role);
-    const isRequirementRelated = this.isRequirementMessage(message);
-    const isProfileRelated = this.isProfileMessage(message);
+    // If message contains profile info, extract and persist it
+    if (this.isProfileMessage(message)) {
+      const profExt = this.llmService.fallbackExtractProfile(message, contextSnapshot.profile);
+      if (profExt.profile && JSON.stringify(profExt.profile) !== JSON.stringify(contextSnapshot.profile)) {
+        contextSnapshot.profile = profExt.profile;
+        AiOrchestrator.profileStore.set(applicantId, profExt.profile);
+        await this.persistApplicantProfile(applicantId, profExt.profile);
+      }
+    }
 
-    // Step A: If requirement is not yet complete OR user is explicitly providing requirement fields (e.g. role, company, country)
-    if (!wasRequirementComplete || isRequirementRelated) {
+    // Step B: Initial Onboarding Requirements check (when user has no role/country and states a goal)
+    const wasRequirementComplete = Boolean(contextSnapshot.requirement.country && contextSnapshot.requirement.role);
+    const isRequirementRelated = this.isRequirementMessage(message);
+
+    if (!wasRequirementComplete && isRequirementRelated && intent === 'GENERAL_QUERY') {
       const reqResult = await this.llmService.extractRequirement(
         message,
-        currentRequirement,
+        contextSnapshot.requirement,
         history,
       );
 
-      // Update requirement state non-destructively
       if (reqResult.requirement.country || reqResult.requirement.role || reqResult.requirement.company) {
-        currentRequirement = {
-          ...currentRequirement,
+        const updatedReq = {
+          ...contextSnapshot.requirement,
           ...(reqResult.requirement.country ? { country: reqResult.requirement.country } : {}),
           ...(reqResult.requirement.role ? { role: reqResult.requirement.role } : {}),
           ...(reqResult.requirement.company ? { company: reqResult.requirement.company } : {}),
         };
-        AiOrchestrator.requirementStore.set(applicantId, currentRequirement);
-        await this.persistApplicantRequirement(applicantId, currentRequirement);
+        AiOrchestrator.requirementStore.set(applicantId, updatedReq);
+        await this.persistApplicantRequirement(applicantId, updatedReq);
+        contextSnapshot.requirement = updatedReq;
       }
 
-      const isNowComplete = Boolean(currentRequirement.country && currentRequirement.role);
+      try {
+        await this.saveConversation(applicantId, message, reqResult.message);
+      } catch {}
 
-      // If user message is purely requirement-related and requirement is STILL incomplete: stay in REQUIREMENTS stage
-      if (!isNowComplete && !isProfileRelated) {
-        try {
-          await this.saveConversation(applicantId, message, reqResult.message);
-        } catch {}
-
-        this.logger.log(
-          `AI Orchestrator [Stage: REQUIREMENTS] for applicant ${applicantId} [Role: ${currentRequirement.role || 'missing'}, Country: ${currentRequirement.country || 'missing'}, Company: ${currentRequirement.company || 'none'}]`,
-        );
-
-        return {
-          applicantId,
-          message: reqResult.message,
-          stage: 'REQUIREMENTS',
-          goalType: 'EMPLOYMENT',
-          requirement: currentRequirement,
-          profile: currentProfile,
-          missingInformation: reqResult.missingInformation,
-          nextAction: reqResult.nextAction,
-          intent,
-        };
-      }
+      return {
+        applicantId,
+        message: reqResult.message,
+        stage: 'REQUIREMENTS',
+        goalType: 'EMPLOYMENT',
+        requirement: contextSnapshot.requirement,
+        profile: contextSnapshot.profile,
+        missingInformation: reqResult.missingInformation,
+        nextAction: reqResult.nextAction,
+        intent,
+      };
     }
 
-    // Step B: Profile extraction (when requirement is complete OR message contains profile data)
-    const profileResult = await this.llmService.extractProfile(
+    // Step C: Context-Augmented Response Generation via Gemini LLM with Full Live Applicant Database Context
+    const aiResult = await this.llmService.generateApplicantResponse(
       message,
-      currentProfile,
-      currentRequirement,
+      contextSnapshot,
       history,
+      intent,
     );
 
-    // Persist profile in-memory & DB
-    AiOrchestrator.profileStore.set(applicantId, profileResult.profile);
-    await this.persistApplicantProfile(applicantId, profileResult.profile);
-
-    // If requirement just became complete on this turn, provide clear confirmation and ask for education
-    let responseMessage = profileResult.message;
-    if (!wasRequirementComplete && currentRequirement.country && currentRequirement.role) {
-      const companyPart = currentRequirement.company ? ` at ${currentRequirement.company}` : '';
-      const prefix = `Great! I have recorded your goal to work as a ${currentRequirement.role} in ${currentRequirement.country}${companyPart}. `;
-      if (!responseMessage.toLowerCase().includes('recorded your goal')) {
-        responseMessage = prefix + responseMessage;
-      }
+    // If AI updated profile or requirements during response generation, persist them
+    if (aiResult.profile && JSON.stringify(aiResult.profile) !== JSON.stringify(contextSnapshot.profile)) {
+      AiOrchestrator.profileStore.set(applicantId, aiResult.profile);
+      await this.persistApplicantProfile(applicantId, aiResult.profile);
+    }
+    if (aiResult.requirement && JSON.stringify(aiResult.requirement) !== JSON.stringify(contextSnapshot.requirement)) {
+      AiOrchestrator.requirementStore.set(applicantId, aiResult.requirement);
+      await this.persistApplicantRequirement(applicantId, aiResult.requirement);
     }
 
     try {
-      await this.saveConversation(applicantId, message, responseMessage);
+      await this.saveConversation(applicantId, message, aiResult.message);
     } catch {}
-
-    this.logger.log(
-      `AI Orchestrator [Stage: PROFILE] for applicant ${applicantId} [Degree: ${profileResult.profile.education?.degree || 'none'}, Skills: ${profileResult.profile.skills?.technicalSkills?.join(',') || 'none'}]`,
-    );
 
     return {
       applicantId,
-      message: responseMessage,
-      stage: 'PROFILE',
+      message: aiResult.message,
+      stage: aiResult.stage || contextSnapshot.journey?.currentStage || 'PROFILE',
       goalType: 'EMPLOYMENT',
-      requirement: currentRequirement,
-      profile: profileResult.profile,
-      missingInformation: profileResult.missingInformation,
-      nextAction: profileResult.nextAction,
-      intent,
+      requirement: aiResult.requirement || contextSnapshot.requirement,
+      profile: aiResult.profile || contextSnapshot.profile,
+      missingInformation: aiResult.missingInformation || [],
+      nextAction: aiResult.nextAction || contextSnapshot.nextAction,
+      intent: aiResult.intent || intent,
     };
+  }
+
+  private isProfileUpdateMessage(message: string): boolean {
+    const lower = (message || '').toLowerCase();
+    return (
+      /\b(update|change|modify|set|correct|add|make|fix)\s+(?:my\s+)?(name|profile|details|degree|education|qualification|company|employer|job|role|skills|technical skills|language|languages|german|english|nationality|dob|date of birth|experience|work experience)\b/i.test(lower) ||
+      /\b(change|update|set)\s+(?:my\s+)?name\s+(?:to|as|is)\b/i.test(lower) ||
+      /\badd\s+(?:german|english|hindi|\w+)\s+(?:b1|b2|a1|a2|c1|c2|fluent|native)\b/i.test(lower)
+    );
   }
 
   private isRequirementMessage(message: string): boolean {
@@ -215,7 +361,7 @@ export class AiOrchestrator {
       if (!applicant) {
         applicant = this.applicantRepository.create({
           id: applicantUuid,
-          name: 'Rahul Sharma',
+          name: `Applicant ${applicantId}`,
           email: `applicant-${applicantId}@educaro.de`,
           country: requirement.country || 'Germany',
           goal: requirement.role ? `${requirement.role} in ${requirement.country || 'Germany'}` : null,
@@ -241,7 +387,7 @@ export class AiOrchestrator {
       if (!applicant) {
         applicant = this.applicantRepository.create({
           id: applicantUuid,
-          name: profile.personal?.fullName || 'Rahul Sharma',
+          name: profile.personal?.fullName || `Applicant ${applicantId}`,
           email: `applicant-${applicantId}@educaro.de`,
           country: profile.personal?.nationality || 'India',
         });
@@ -283,7 +429,7 @@ export class AiOrchestrator {
       if (profile.languages) {
         profileEntity.languages = profile.languages.map((l) => ({
           language: l.language,
-          level: l.proficiency || 'Documented',
+          level: l.proficiency || l.level || 'Documented',
         }));
       }
       await this.profileRepository.save(profileEntity);
@@ -295,26 +441,94 @@ export class AiOrchestrator {
   private isProfileMessage(message: string): boolean {
     const lower = (message || '').toLowerCase();
     return (
+      /\b(update|change|modify|set|correct|make)\s+(?:my\s+)?(name|profile|details|degree|education|qualification|company|employer|job|role|skills|language|nationality)\b/i.test(lower) ||
+      /\b(my\s+)?name\s+(?:is|as|to)\b/i.test(lower) ||
       /\bb\.?tech\b|\bb\.?sc\b|\bm\.?tech\b|\bm\.?sc\b|\bbachelor\b|\bmaster\b|\bdegree\b|\bcollege\b|\buniversity\b|\bgraduat/i.test(lower) ||
       /\bworked at\b|\bworking at\b|\byears? of experience\b|\byears? experience\b/i.test(lower) ||
       /\bskills?\b|\bpython\b|\bjava\b|\bc\+\+\b|\bjavascript\b|\btypescript\b|\breact\b|\bnode/i.test(lower) ||
       /\bspeak\b|\blanguages?\b|\bgerman is\b|\benglish is\b|\bb1\b|\bb2\b|\ba1\b|\ba2\b|\bc1\b|\bc2\b/i.test(lower) ||
-      /\bmy name is\b|\bborn on\b|\bnationality\b/i.test(lower)
+      /\bborn on\b|\bnationality\b/i.test(lower)
     );
   }
 
   /**
    * Retrieves the current stored requirement for an applicant.
    */
-  getRequirement(applicantId: string): RequirementData {
-    return AiOrchestrator.requirementStore.get(applicantId) || {};
+  async getRequirement(applicantId: string): Promise<RequirementData> {
+    const applicantUuid = resolveApplicantUuid(applicantId);
+    let stored = AiOrchestrator.requirementStore.get(applicantId) || {};
+    try {
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(applicantId);
+      const applicant = await this.applicantRepository.findOne({
+        where: isUuid ? [{ id: applicantId }, { email: applicantId }] : [{ id: applicantUuid }, { email: applicantId }],
+      });
+      if (applicant) {
+        if (applicant.country && !stored.country) stored.country = applicant.country;
+        if (applicant.goal && !stored.role) {
+          const parts = applicant.goal.split(' in ');
+          stored.role = parts[0] || applicant.goal;
+          if (parts[1] && !stored.country) stored.country = parts[1];
+        }
+      }
+      AiOrchestrator.requirementStore.set(applicantId, stored);
+    } catch {}
+    return stored;
   }
 
   /**
-   * Retrieves the current stored profile for an applicant.
+   * Retrieves the current stored profile for an applicant from in-memory cache and PostgreSQL database.
    */
-  getProfile(applicantId: string): ProfileData {
-    return AiOrchestrator.profileStore.get(applicantId) || {};
+  async getProfile(applicantId: string): Promise<ProfileData> {
+    const applicantUuid = resolveApplicantUuid(applicantId);
+    let stored = AiOrchestrator.profileStore.get(applicantId) || {};
+    try {
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(applicantId);
+      const applicant = await this.applicantRepository.findOne({
+        where: isUuid ? [{ id: applicantId }, { email: applicantId }] : [{ id: applicantUuid }, { email: applicantId }],
+      });
+      const dbProfile = await this.profileRepository.findOne({
+        where: { applicantId: applicant?.id || applicantUuid },
+      });
+
+      const merged: ProfileData = {
+        personal: {
+          fullName: applicant?.name || dbProfile?.additionalInfo?.personal?.fullName || stored.personal?.fullName || '',
+          dateOfBirth: dbProfile?.additionalInfo?.personal?.dateOfBirth || stored.personal?.dateOfBirth || '',
+          nationality: applicant?.country || dbProfile?.additionalInfo?.personal?.nationality || stored.personal?.nationality || '',
+        },
+        education: {
+          degree: dbProfile?.education?.degree || stored.education?.degree || '',
+          field: dbProfile?.education?.field || stored.education?.field || '',
+          institution: dbProfile?.education?.institution || stored.education?.institution || '',
+          graduationYear: dbProfile?.education?.graduationYear || stored.education?.graduationYear || '',
+        },
+        employment: {
+          company: dbProfile?.workExperience?.[0]?.company || dbProfile?.workExperience?.[0]?.institution || stored.employment?.company || '',
+          jobTitle: dbProfile?.workExperience?.[0]?.jobTitle || dbProfile?.workExperience?.[0]?.role || stored.employment?.jobTitle || '',
+          experience: dbProfile?.experience || stored.employment?.experience || '',
+          startDate: dbProfile?.workExperience?.[0]?.startDate || stored.employment?.startDate || '',
+          endDate: dbProfile?.workExperience?.[0]?.endDate || stored.employment?.endDate || '',
+        },
+        skills: {
+          technicalSkills: Array.isArray(dbProfile?.skills) && dbProfile.skills.length > 0
+            ? dbProfile.skills
+            : (stored.skills?.technicalSkills || []),
+          otherSkills: stored.skills?.otherSkills || [],
+        },
+        languages: Array.isArray(dbProfile?.languages) && dbProfile.languages.length > 0
+          ? dbProfile.languages.map((l: any) => ({
+              language: l.language || (l as any).name || '',
+              proficiency: l.level || (l as any).proficiency || 'Documented',
+            }))
+          : (stored.languages || []),
+      };
+
+      AiOrchestrator.profileStore.set(applicantId, merged);
+      return merged;
+    } catch (err) {
+      this.logger.warn(`Could not load profile from DB: ${err.message}`);
+      return stored;
+    }
   }
 
   private generateResponse(
@@ -559,6 +773,54 @@ export class AiOrchestrator {
       profile: chatResponse.profile,
       nextAction: chatResponse.nextAction,
       intent: chatResponse.intent,
+    };
+  }
+
+  /**
+   * Generates tailored requirement proposals using Gemini for a given career goal.
+   */
+  async generateGoalRequirements(applicantId: string, goal: string): Promise<any> {
+    const result = await this.llmService.generateGoalRequirements(goal);
+    return {
+      applicantId,
+      ...result,
+    };
+  }
+
+  /**
+   * Confirms and persists approved requirements into PostgreSQL and syncs with requirementStore.
+   */
+  async saveGoalRequirements(applicantId: string, payload: {
+    requirements: any[];
+    role?: string;
+    country?: string;
+    company?: string | null;
+  }): Promise<any> {
+    const applicantUuid = resolveApplicantUuid(applicantId);
+
+    // Save to domain qualification service
+    const saved = await this.qualificationService.saveCustomRequirements(
+      applicantUuid,
+      payload.requirements,
+      {
+        role: payload.role,
+        country: payload.country || 'Germany',
+        company: payload.company || undefined,
+      },
+    );
+
+    // Update in-memory requirementStore
+    const current = AiOrchestrator.requirementStore.get(applicantId) || {};
+    if (payload.role) current.role = payload.role;
+    if (payload.country) current.country = payload.country;
+    if (payload.company) current.company = payload.company;
+    AiOrchestrator.requirementStore.set(applicantId, current);
+    AiOrchestrator.requirementStore.set(applicantUuid, current);
+
+    return {
+      success: true,
+      message: 'Requirements saved successfully',
+      ...saved,
     };
   }
 }

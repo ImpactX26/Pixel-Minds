@@ -14,13 +14,13 @@ export class ProfileController {
   constructor(private readonly profileService: ProfileService) {}
 
   @Get()
-  async getProfile(@Param('id', new ParseUUIDPipe()) id: string) {
+  async getProfile(@Param('id') id: string) {
     return this.profileService.findByApplicantId(id);
   }
 
   @Patch()
   async updateProfile(
-    @Param('id', new ParseUUIDPipe()) id: string,
+    @Param('id') id: string,
     @Body() updateProfileDto: UpdateProfileDto,
   ) {
     return this.profileService.updateByApplicantId(id, updateProfileDto);

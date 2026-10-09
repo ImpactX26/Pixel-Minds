@@ -16,6 +16,7 @@ import { DocumentExtractionClient, VerificationResult } from './extraction.clien
 import { UploadDocumentDto } from './dto/upload-document.dto';
 import { DocumentStatus } from '../common/enums';
 import { resolveApplicantUuid } from '../common/utils/uuid.util';
+import { AiOrchestrator } from '../ai/ai.orchestrator';
 import { v4 as uuidv4 } from 'uuid';
 import * as path from 'path';
 
@@ -37,6 +38,13 @@ export class DocumentsService {
 
   // In-memory document store for local resilience and immediate availability
   private static readonly inMemoryDocs = new Map<string, Document>();
+
+  static getInMemoryDocsForApplicant(applicantId: string): Document[] {
+    const applicantUuid = resolveApplicantUuid(applicantId);
+    return Array.from(this.inMemoryDocs.values()).filter(
+      (d) => d.applicantId === applicantId || d.applicantId === applicantUuid,
+    );
+  }
 
   constructor(
     @InjectRepository(Document)
@@ -63,6 +71,27 @@ export class DocumentsService {
       profile = await this.profileRepository.findOne({ where: { applicantId: applicantUuid } });
     } catch (err) {
       this.logger.debug(`Could not fetch applicant/profile from DB: ${err.message}`);
+    }
+
+    const stored = AiOrchestrator.getStoredProfile(applicantId) || AiOrchestrator.getStoredProfile(applicantUuid) || {};
+    if (!profile && Object.keys(stored).length > 0) {
+      profile = {
+        applicantId: applicantUuid,
+        education: stored.education || {},
+        experience: stored.employment?.experience || null,
+        skills: stored.skills?.technicalSkills || [],
+        languages: stored.languages || [],
+        workExperience: stored.employment ? [stored.employment] : [],
+        additionalInfo: { personal: stored.personal || {} },
+      } as any;
+    }
+    if (!applicant) {
+      applicant = {
+        id: applicantUuid,
+        name: stored.personal?.fullName || 'Rahul Sharma',
+        email: `applicant-${applicantId}@educaro.de`,
+        country: stored.personal?.nationality || 'India',
+      } as any;
     }
 
     return { applicant, profile };
@@ -105,6 +134,16 @@ export class DocumentsService {
       mimeType = file.mimetype;
     }
 
+    let rawText = uploadDocumentDto.rawText || '';
+    if (!rawText && fileBuffer.length > 0) {
+      try {
+        const textStr = fileBuffer.toString('utf-8');
+        if (textStr && (originalName.endsWith('.txt') || mimeType.startsWith('text/'))) {
+          rawText = textStr;
+        }
+      } catch {}
+    }
+
     // 3. Generate Document ID & Sanitize Filename
     const documentId = uuidv4();
     const sanitizedFilename = this.storageService.sanitizeFilename(originalName);
@@ -137,9 +176,9 @@ export class DocumentsService {
       type: docType,
       status: DocumentStatus.UPLOADED,
       fileUrl,
-      extractedData: uploadDocumentDto.rawText ? { rawText: uploadDocumentDto.rawText } : {},
+      extractedData: rawText ? { rawText } : {},
       uploadedAt: new Date(),
-      applicant: null as any,
+      applicant: { id: applicantUuid } as any,
     };
 
     // Store in-memory
@@ -158,8 +197,12 @@ export class DocumentsService {
         await this.applicantRepository.save(applicant);
       }
 
-      const entity = this.documentRepository.create(document);
+      const entity = this.documentRepository.create({
+        ...document,
+        applicant: { id: applicantUuid } as any,
+      });
       const saved = await this.documentRepository.save(entity);
+      saved.applicantId = applicantUuid;
       DocumentsService.inMemoryDocs.set(documentId, saved);
       return saved;
     } catch (dbErr) {
@@ -175,7 +218,7 @@ export class DocumentsService {
 
     try {
       const dbDocs = await this.documentRepository.find({
-        where: [{ applicantId: applicantUuid }, { applicantId }],
+        where: { applicantId: applicantUuid },
         order: { uploadedAt: 'DESC' },
       });
       if (dbDocs.length > 0) {

@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Param,
+  Body,
   ParseUUIDPipe,
   HttpCode,
   HttpStatus,
@@ -15,22 +16,31 @@ export class QualificationController {
 
   @Get('requirements')
   async getRequirements(
-    @Param('id', new ParseUUIDPipe()) id: string,
+    @Param('id') id: string,
   ) {
     return this.qualificationService.getRequirementDefinitions(id);
   }
 
   @Get('qualification')
   async getQualification(
-    @Param('id', new ParseUUIDPipe()) id: string,
+    @Param('id') id: string,
   ) {
     return this.qualificationService.getLatestQualification(id);
+  }
+
+  @Post('requirements/save')
+  @HttpCode(HttpStatus.OK)
+  async saveRequirements(
+    @Param('id') id: string,
+    @Body() body: { requirements: any[]; role?: string; country?: string; company?: string },
+  ) {
+    return this.qualificationService.saveCustomRequirements(id, body.requirements || [], body);
   }
 
   @Post('qualification/check')
   @HttpCode(HttpStatus.OK)
   async checkQualification(
-    @Param('id', new ParseUUIDPipe()) id: string,
+    @Param('id') id: string,
   ) {
     return this.qualificationService.checkQualification(id);
   }

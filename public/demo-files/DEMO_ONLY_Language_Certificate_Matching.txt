@@ -1,0 +1,28 @@
+================================================================================
+                         EDUCARO / PIXELMIND AI
+                   SYNTHETIC DEMONSTRATION DOCUMENT
+                     *** FOR DEMO USE ONLY ***
+  [THIS IS NOT AN OFFICIAL DOCUMENT - NO REAL PERSONAL DATA IS CONTAINED]
+================================================================================
+
+SYNTHETIC GERMAN LANGUAGE PROFICIENCY CERTIFICATE
+(MATCHING TEST CASE)
+
+This is to certify that:
+Candidate Name: Rahul Sharma
+Candidate DOB: 1998-07-24
+Test Registration No: DEMO-LANG-MATCH-7719
+
+Has participated in the Examination for German Language Competency and has
+demonstrated language competence corresponding to the Common European Framework
+of Reference for Languages (CEFR):
+
+LANGUAGE: German
+LEVEL ACHIEVED: B2 (Independent User)
+EXAMINATION CENTER: Goethe Synthetic Testing Center, Bangalore
+DATE OF EXAMINATION: 12-01-2026
+OVERALL RESULT: PASS (88/100 points)
+
+================================================================================
+              *** END OF SYNTHETIC DEMO DOCUMENT ***
+================================================================================

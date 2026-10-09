@@ -26,7 +26,7 @@ const Icon = ({ name, size = 20, stroke = 2, className = '' }) => {
   );
 };
 
-export default function CvGenerationView({ applicantId = '123' }) {
+export default function CvGenerationView({ applicantId }) {
   const [activeTab, setActiveTab] = useState('preview'); // 'preview' | 'edit'
   const [isGenerating, setIsGenerating] = useState(false);
   const [isSaving, setIsSaving] = useState(false);

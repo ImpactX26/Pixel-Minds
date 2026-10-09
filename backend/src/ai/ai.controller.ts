@@ -72,5 +72,26 @@ export class AiController {
   async getDefaultProfile(): Promise<ProfileData> {
     return this.aiOrchestrator.getProfile('default');
   }
+
+  @Post('requirements/generate')
+  @HttpCode(HttpStatus.OK)
+  async generateRequirements(@Body() body: { applicantId?: string; goal?: string; careerGoal?: string }) {
+    const applicantId = body.applicantId || 'default';
+    const goal = body.goal || body.careerGoal || 'Software Engineer in Germany';
+    return this.aiOrchestrator.generateGoalRequirements(applicantId, goal);
+  }
+
+  @Post('requirements/save')
+  @HttpCode(HttpStatus.OK)
+  async saveRequirements(@Body() body: {
+    applicantId?: string;
+    requirements: any[];
+    role?: string;
+    country?: string;
+    company?: string | null;
+  }) {
+    const applicantId = body.applicantId || 'default';
+    return this.aiOrchestrator.saveGoalRequirements(applicantId, body);
+  }
 }
 

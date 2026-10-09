@@ -280,17 +280,29 @@ export class ConclusionService {
         'This assessment is prepared by Educaro AI Companion for educational and qualification guidance. Official visa issuance, recognition, and employment contracts remain subject to formal German authority and employer evaluations.',
     };
 
+    const applicantObj = {
+      name: applicant?.name || 'Rahul Sharma',
+      email: applicant?.email || `applicant-${applicantId}@educaro.de`,
+      country: applicant?.country || 'India',
+      targetRole: reqInfo.role || 'Software Engineer',
+      targetCountry: reqInfo.country || 'Germany',
+      summary: `Pathway applicant targeting ${reqInfo.role || 'Software Engineering'} in Germany.`,
+    };
+
+    const overallProgress = Math.round(
+      (journeyStages.filter((s) => s.status === 'COMPLETED').length / journeyStages.length) * 100,
+    );
+
     return {
       applicantId,
-      applicant: {
-        name: applicant?.name || 'Rahul Sharma',
-        email: applicant?.email || `applicant-${applicantId}@educaro.de`,
-        country: applicant?.country || 'India',
-        targetRole: reqInfo.role || 'Software Engineer',
-        targetCountry: reqInfo.country || 'Germany',
-        summary: `Pathway applicant targeting ${reqInfo.role || 'Software Engineering'} in Germany.`,
-      },
+      applicant: applicantObj,
+      applicantOverview: applicantObj,
+      summary: finalOutcome.message,
       journeyStages,
+      journeyStatus: {
+        stages: journeyStages,
+        overallProgress,
+      },
       documentStatus: {
         total: documents.length,
         verified: verifiedDocs,
@@ -315,7 +327,15 @@ export class ConclusionService {
         priority: nextStepResult.priority || 'HIGH',
         isReady: nextStepResult.requirementCode === 'READY' || nextStepResult.title?.toLowerCase().includes('proceed'),
       },
+      nextSteps: [
+        {
+          title: nextStepResult.title,
+          reason: nextStepResult.reason,
+          action: nextStepResult.action,
+          priority: nextStepResult.priority || 'HIGH',
+        },
+      ],
       finalOutcome,
-    };
+    } as any;
   }
 }

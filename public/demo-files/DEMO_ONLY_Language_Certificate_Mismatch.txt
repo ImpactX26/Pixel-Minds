@@ -1,0 +1,33 @@
+================================================================================
+                         EDUCARO / PIXELMIND AI
+                   SYNTHETIC DEMONSTRATION DOCUMENT
+                     *** FOR DEMO USE ONLY ***
+  [THIS IS NOT AN OFFICIAL DOCUMENT - NO REAL PERSONAL DATA IS CONTAINED]
+================================================================================
+
+SYNTHETIC GERMAN LANGUAGE PROFICIENCY CERTIFICATE
+(DELIBERATE NAME-MISMATCH TEST CASE)
+
+This is to certify that:
+Candidate Name: Vikramaditya Patel
+Candidate DOB: 1995-11-04
+Test Registration No: DEMO-LANG-MISMATCH-8831
+
+Has participated in the Examination for German Language Competency and has
+demonstrated language competence corresponding to the Common European Framework
+of Reference for Languages (CEFR):
+
+LANGUAGE: German
+LEVEL ACHIEVED: B2 (Independent User)
+EXAMINATION CENTER: Goethe Synthetic Testing Center, Bangalore
+DATE OF EXAMINATION: 20-08-2025
+OVERALL RESULT: PASS (84/100 points)
+
+NOTE FOR VERIFICATION ENGINE:
+The candidate name stated on this document is 'Vikramaditya Patel'.
+When uploaded for applicant 'Rahul Sharma', this document should intentionally
+trigger a NAME_MISMATCH verification warning requiring applicant clarification.
+
+================================================================================
+              *** END OF SYNTHETIC DEMO DOCUMENT ***
+================================================================================

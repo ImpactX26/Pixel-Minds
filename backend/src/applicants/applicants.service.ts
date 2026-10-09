@@ -13,6 +13,8 @@ import { ApplicantProfile } from '../profile/entities/applicant-profile.entity';
 import { CreateApplicantDto } from './dto/create-applicant.dto';
 import { UpdateApplicantDto } from './dto/update-applicant.dto';
 import { JourneyStage } from '../common/enums';
+import { resolveApplicantUuid } from '../common/utils/uuid.util';
+import { DemoSeedService } from './demo-seed.service';
 
 @Injectable()
 export class ApplicantsService {
@@ -22,7 +24,59 @@ export class ApplicantsService {
     @InjectRepository(Applicant)
     private readonly applicantRepository: Repository<Applicant>,
     private readonly dataSource: DataSource,
+    private readonly demoSeedService: DemoSeedService,
   ) {}
+
+  async findById(id: string): Promise<Applicant> {
+    const rawId = (id || '').trim();
+    if (rawId === 'abc' || rawId === 'demo-fully-populated-123' || rawId === 'abc@demo.pixelmind.ai') {
+      return this.demoSeedService.seedFullyPopulatedDemo();
+    }
+    if (rawId === 'demo-fresh-1' || rawId === 'demo.fresh1@pixelmind.ai') {
+      return this.demoSeedService.seedFreshDemo1();
+    }
+    if (rawId === 'demo-fresh-2' || rawId === 'demo.fresh2@pixelmind.ai') {
+      return this.demoSeedService.seedFreshDemo2();
+    }
+
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(rawId);
+    const targetUuid = isUuid ? rawId : resolveApplicantUuid(rawId);
+
+    const applicant = await this.applicantRepository.findOne({
+      where: [{ id: targetUuid }, { email: rawId }],
+      relations: ['journey', 'profile'],
+    });
+
+    if (!applicant) {
+      throw new NotFoundException(`Applicant with ID or Email "${id}" not found`);
+    }
+
+    return applicant;
+  }
+
+  async findByEmail(email: string): Promise<Applicant> {
+    const rawEmail = (email || '').trim().toLowerCase();
+    if (rawEmail === 'abc' || rawEmail === 'abc@demo.pixelmind.ai') {
+      return this.demoSeedService.seedFullyPopulatedDemo();
+    }
+    if (rawEmail === 'demo.fresh1@pixelmind.ai' || rawEmail === 'demo-fresh-1') {
+      return this.demoSeedService.seedFreshDemo1();
+    }
+    if (rawEmail === 'demo.fresh2@pixelmind.ai' || rawEmail === 'demo-fresh-2') {
+      return this.demoSeedService.seedFreshDemo2();
+    }
+
+    const applicant = await this.applicantRepository.findOne({
+      where: { email: rawEmail },
+      relations: ['journey', 'profile'],
+    });
+
+    if (!applicant) {
+      throw new NotFoundException(`Applicant with email "${email}" not found`);
+    }
+
+    return applicant;
+  }
 
   async create(createApplicantDto: CreateApplicantDto): Promise<Applicant> {
     const existing = await this.applicantRepository.findOne({
@@ -93,32 +147,6 @@ export class ApplicantsService {
     } finally {
       await queryRunner.release();
     }
-  }
-
-  async findById(id: string): Promise<Applicant> {
-    const applicant = await this.applicantRepository.findOne({
-      where: [{ id }, { email: id }],
-      relations: ['journey', 'profile'],
-    });
-
-    if (!applicant) {
-      throw new NotFoundException(`Applicant with ID or Email "${id}" not found`);
-    }
-
-    return applicant;
-  }
-
-  async findByEmail(email: string): Promise<Applicant> {
-    const applicant = await this.applicantRepository.findOne({
-      where: { email: email.trim().toLowerCase() },
-      relations: ['journey', 'profile'],
-    });
-
-    if (!applicant) {
-      throw new NotFoundException(`Applicant with email "${email}" not found`);
-    }
-
-    return applicant;
   }
 
   async update(id: string, updateApplicantDto: UpdateApplicantDto): Promise<Applicant> {

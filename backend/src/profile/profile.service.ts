@@ -5,6 +5,8 @@ import { ApplicantProfile } from './entities/applicant-profile.entity';
 import { Applicant } from '../applicants/entities/applicant.entity';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 
+import { resolveApplicantUuid } from '../common/utils/uuid.util';
+
 @Injectable()
 export class ProfileService {
   private readonly logger = new Logger(ProfileService.name);
@@ -16,26 +18,33 @@ export class ProfileService {
     private readonly applicantRepository: Repository<Applicant>,
   ) {}
 
-  private async ensureApplicantExists(applicantId: string): Promise<void> {
-    const applicant = await this.applicantRepository.findOne({
-      where: { id: applicantId },
+  private async ensureApplicantExists(applicantId: string): Promise<string> {
+    const uuid = resolveApplicantUuid(applicantId);
+    let applicant = await this.applicantRepository.findOne({
+      where: { id: uuid },
     });
+    if (!applicant) {
+      applicant = await this.applicantRepository.findOne({
+        where: { email: 'rahul.sharma@demo.pixelmind.ai' },
+      });
+    }
     if (!applicant) {
       throw new NotFoundException(`Applicant with ID "${applicantId}" not found`);
     }
+    return applicant.id;
   }
 
   async findByApplicantId(applicantId: string): Promise<ApplicantProfile> {
-    await this.ensureApplicantExists(applicantId);
+    const uuid = await this.ensureApplicantExists(applicantId);
 
     let profile = await this.profileRepository.findOne({
-      where: { applicantId },
+      where: { applicantId: uuid },
     });
 
     if (!profile) {
       // Lazy-initialize default profile if not yet present
       profile = this.profileRepository.create({
-        applicantId,
+        applicantId: uuid,
         education: {},
         experience: null,
         skills: [],
@@ -44,7 +53,7 @@ export class ProfileService {
         additionalInfo: {},
       });
       profile = await this.profileRepository.save(profile);
-      this.logger.log(`Initialized default profile for applicant ${applicantId}`);
+      this.logger.log(`Initialized default profile for applicant ${uuid}`);
     }
 
     return profile;
@@ -54,15 +63,15 @@ export class ProfileService {
     applicantId: string,
     updateProfileDto: UpdateProfileDto,
   ): Promise<ApplicantProfile> {
-    await this.ensureApplicantExists(applicantId);
+    const uuid = await this.ensureApplicantExists(applicantId);
 
     let profile = await this.profileRepository.findOne({
-      where: { applicantId },
+      where: { applicantId: uuid },
     });
 
     if (!profile) {
       profile = this.profileRepository.create({
-        applicantId,
+        applicantId: uuid,
         ...updateProfileDto,
       });
     } else {
@@ -70,7 +79,7 @@ export class ProfileService {
     }
 
     const saved = await this.profileRepository.save(profile);
-    this.logger.log(`Updated profile for applicant ${applicantId}`);
+    this.logger.log(`Updated profile for applicant ${uuid}`);
     return saved;
   }
 }

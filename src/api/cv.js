@@ -1,10 +1,12 @@
 import { api } from './client';
 
+const getActiveId = (id) => id || localStorage.getItem('educaro_applicant_id') || 'default';
+
 export const cvApi = {
-  generateCv: (applicantId = '123', data = {}) =>
-    api.post(`/applicants/${applicantId}/cv/generate`, data),
-  saveCv: (applicantId = '123', cvData = {}) =>
-    api.post(`/applicants/${applicantId}/cv/save`, { applicantId, cvData }),
-  getCv: (applicantId = '123') =>
-    api.get(`/applicants/${applicantId}/cv`),
+  generateCv: (applicantId, data = {}) =>
+    api.post(`/applicants/${getActiveId(applicantId)}/cv/generate`, data),
+  saveCv: (applicantId, cvData = {}) =>
+    api.post(`/applicants/${getActiveId(applicantId)}/cv/save`, { applicantId: getActiveId(applicantId), cvData }),
+  getCv: (applicantId) =>
+    api.get(`/applicants/${getActiveId(applicantId)}/cv`),
 };

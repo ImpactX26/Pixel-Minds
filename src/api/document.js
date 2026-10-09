@@ -1,11 +1,13 @@
 import { api } from './client';
 
+const getActiveId = (id) => id || localStorage.getItem('educaro_applicant_id') || 'default';
+
 export const documentApi = {
-  getDocuments: (applicantId = '123') => api.get(`/applicants/${applicantId}/documents`),
-  uploadDocument: (applicantId = '123', file, onUploadProgress) => {
+  getDocuments: (applicantId) => api.get(`/applicants/${getActiveId(applicantId)}/documents`),
+  uploadDocument: (applicantId, file, onUploadProgress) => {
     const formData = new FormData();
     formData.append('file', file);
-    return api.client.post(`/applicants/${applicantId}/documents`, formData, {
+    return api.client.post(`/applicants/${getActiveId(applicantId)}/documents`, formData, {
       headers: {
         'Content-Type': 'multipart/form-data',
       },
